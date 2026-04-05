@@ -403,9 +403,8 @@ class HintGridApp:
     def clean_similarity(self) -> None:
         """Clear SIMILAR_TO relationships. Cascades to post clusters and interests."""
         logger.info("Clearing SIMILAR_TO relationships")
-        self.neo4j.execute_labeled(
-            "MATCH (p:__post__)-[r:SIMILAR_TO]->() DELETE r",
-            {"post": "Post"},
+        self.neo4j.delete_all_similar_to_relationships(
+            batch_size=self.settings.apoc_batch_size,
         )
         logger.info("Similarity graph cleared, cascading to post clusters and interests")
         # Cascade: post clusters and interests depend on similarity

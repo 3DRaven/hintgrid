@@ -56,8 +56,6 @@ if TYPE_CHECKING:
     )
 from hintgrid.exceptions import GDSNotAvailableError, Neo4jConnectionError
 from hintgrid.utils.coercion import coerce_int
-from hintgrid.utils.msgspec_types import Neo4jCountResult
-import msgspec
 
 logger = logging.getLogger(__name__)
 
@@ -432,9 +430,8 @@ class Neo4jClient(AbstractContextManager["Neo4jClient"]):
     def prune_similarity_links(self, settings: HintGridSettings) -> None:
         """Prune SIMILAR_TO relationships based on pruning strategy."""
         if settings.similarity_pruning == "aggressive":
-            self.execute_labeled(
-                "MATCH (p:__post__)-[r:SIMILAR_TO]->() DELETE r",
-                {"post": "Post"},
+            self.delete_all_similar_to_relationships(
+                batch_size=settings.apoc_batch_size,
             )
             return
 
@@ -457,6 +454,43 @@ class Neo4jClient(AbstractContextManager["Neo4jClient"]):
             return
 
         logger.info("Similarity pruning disabled (strategy=%s)", settings.similarity_pruning)
+
+    def delete_all_similar_to_relationships(self, batch_size: int) -> None:
+        """Delete all SIMILAR_TO edges using apoc.periodic.iterate.
+
+        Avoids a single large DELETE transaction that can exceed
+        ``dbms.memory.transaction.total.max`` on graphs with many edges.
+        """
+        if batch_size < 1:
+            raise ValueError(f"batch_size must be >= 1, got {batch_size}")
+
+        iterate_query: LiteralString = "MATCH (p:__post__)-[r:SIMILAR_TO]->() RETURN id(r) AS rid"
+        action_query: LiteralString = (
+            "UNWIND $_batch AS row "
+            "MATCH (p:__post__)-[r:SIMILAR_TO]->() WHERE id(r) = row.rid "
+            "DELETE r"
+        )
+        result = self.execute_periodic_iterate(
+            iterate_query,
+            action_query,
+            label_map={"post": "Post"},
+            batch_size=batch_size,
+            parallel=False,
+            batch_mode="BATCH",
+        )
+        failed = coerce_int(result.get("failedOperations", 0))
+        if failed > 0:
+            logger.warning(
+                "SIMILAR_TO bulk delete had failures: %s",
+                result.get("errorMessages", []),
+            )
+        logger.info(
+            "SIMILAR_TO bulk delete: batches=%s total=%s committed=%s failed=%s",
+            coerce_int(result.get("batches", 0)),
+            coerce_int(result.get("total", 0)),
+            coerce_int(result.get("committedOperations", 0)),
+            failed,
+        )
 
     def get_existing_rel_types(self) -> frozenset[str]:
         """Return the set of relationship types currently present in the graph.
@@ -605,8 +639,7 @@ class Neo4jClient(AbstractContextManager["Neo4jClient"]):
             # Use size($_batch) for accurate batch counting (parameters are
             # accessible throughout the entire query regardless of WITH scope).
             return (
-                base_action
-                + "\nWITH size($_batch) AS batch_size, $progress_tracker_id AS pt_id, "
+                base_action + "\nWITH size($_batch) AS batch_size, $progress_tracker_id AS pt_id, "
                 "count(*) AS _agg "
                 "MATCH (pt:ProgressTracker {id: pt_id}) "
                 "SET pt.batches = pt.batches + 1, "

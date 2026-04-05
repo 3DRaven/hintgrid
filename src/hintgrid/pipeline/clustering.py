@@ -39,11 +39,11 @@ MIN_KNN_NEIGHBORS = 1
 
 def _get_embedding_index_name(neo4j: Neo4jClient) -> str:
     """Get worker-specific embedding index name for label-based isolation.
-    
+
     Dynamic Indexing approach:
     - If worker_label is set: use "{worker_label}_posts" (e.g., worker_gw0_posts)
     - If no worker_label: use global "post_embedding_index"
-    
+
     This matches the index names created in _create_vector_index().
     """
     if neo4j.worker_label:
@@ -53,10 +53,10 @@ def _get_embedding_index_name(neo4j: Neo4jClient) -> str:
 
 def _get_user_graph_name(neo4j: Neo4jClient) -> str:
     """Get user graph name with worker isolation if needed.
-    
+
     Args:
         neo4j: Neo4j client with optional worker_label
-    
+
     Returns:
         Graph name (e.g., "worker_gw0-user-graph" or "user-graph")
     """
@@ -67,10 +67,10 @@ def _get_user_graph_name(neo4j: Neo4jClient) -> str:
 
 def _get_post_graph_name(neo4j: Neo4jClient) -> str:
     """Get post graph name with worker isolation if needed.
-    
+
     Args:
         neo4j: Neo4j client with optional worker_label
-    
+
     Returns:
         Graph name (e.g., "worker_gw0-post-graph" or "post-graph")
     """
@@ -81,10 +81,10 @@ def _get_post_graph_name(neo4j: Neo4jClient) -> str:
 
 def _get_pagerank_graph_name(neo4j: Neo4jClient) -> str:
     """Get pagerank graph name with worker isolation if needed.
-    
+
     Args:
         neo4j: Neo4j client with optional worker_label
-    
+
     Returns:
         Graph name (e.g., "worker_gw0-pagerank-graph" or "pagerank-graph")
     """
@@ -99,7 +99,7 @@ def _get_pagerank_graph_name(neo4j: Neo4jClient) -> str:
 
 def _extract_vector_dimension(row: dict[str, Neo4jValue]) -> int | None:
     """Extract vector.dimensions from SHOW INDEXES row options.
-    
+
     Neo4j SHOW INDEXES returns nested dicts
     (options → indexConfig → vector.dimensions).
     We drill down with hasattr-based checks at each level instead of isinstance.
@@ -120,6 +120,7 @@ def _extract_vector_dimension(row: dict[str, Neo4jValue]) -> int | None:
     if dim is None:
         return None
     return int(str(dim))
+
 
 # Pattern for safe GDS identifiers (letters, digits, hyphens, underscores)
 _SAFE_GDS_NAME_PATTERN = re.compile(r"^[a-zA-Z][a-zA-Z0-9_-]*$")
@@ -178,13 +179,12 @@ def run_user_clustering(
         "MATCH (u:__user__)-[r:INTERACTS_WITH]->(v:__user__) RETURN count(r) AS count",
         {"user": "User"},
     )
-    interactions_count = coerce_int(
-        interactions_result[0]["count"]
-    ) if interactions_result else 0
+    interactions_count = coerce_int(interactions_result[0]["count"]) if interactions_result else 0
 
     logger.info(
         "  Found %d users, %d INTERACTS_WITH relationships (includes FOLLOWS if follows_weight > 0)",
-        users_count, interactions_count,
+        users_count,
+        interactions_count,
     )
 
     if users_count == 0:
@@ -198,8 +198,7 @@ def run_user_clustering(
     leiden_result: dict[str, Neo4jValue] | None = None
     if interactions_count == 0:
         logger.warning(
-            "No INTERACTS_WITH relationships found, "
-            "assigning all users to single community"
+            "No INTERACTS_WITH relationships found, assigning all users to single community"
         )
         neo4j.execute_labeled(
             "MATCH (u:__user__) SET u.cluster_id = $cluster_id",
@@ -435,13 +434,13 @@ def _diagnose_similarity_prerequisites(
     top_k: int,
 ) -> dict[str, Neo4jValue]:
     """Collect diagnostic information before building similarity graph.
-    
+
     Args:
         neo4j: Neo4j client
         settings: HintGrid settings
         embedding_index_name: Name of the vector index (from _get_embedding_index_name)
         top_k: Number of neighbors to query (for test query)
-    
+
     Returns dictionary with:
     - vector_index_exists: bool
     - vector_index_state: str | None (ONLINE, POPULATING, FAILED)
@@ -469,22 +468,24 @@ def _diagnose_similarity_prerequisites(
         "sample_scores": [],
         "sample_above_threshold": 0,
     }
-    
+
     # Check vector index existence and status
     try:
-        index_result = list(neo4j.execute_and_fetch(
-            "SHOW INDEXES YIELD name, type, state, options "
-            "WHERE name = $name AND type = 'VECTOR' "
-            "RETURN name, state, options",
-            {"name": embedding_index_name},
-        ))
+        index_result = list(
+            neo4j.execute_and_fetch(
+                "SHOW INDEXES YIELD name, type, state, options "
+                "WHERE name = $name AND type = 'VECTOR' "
+                "RETURN name, state, options",
+                {"name": embedding_index_name},
+            )
+        )
         if index_result:
             diagnostics["vector_index_exists"] = True
             diagnostics["vector_index_state"] = index_result[0].get("state")
             diagnostics["vector_index_dimensions"] = _extract_vector_dimension(index_result[0])
     except Exception as exc:
         logger.debug("Index check failed: %s", exc)
-    
+
     # Count posts with embeddings
     try:
         with_embeddings_result = neo4j.execute_and_fetch_labeled(
@@ -492,10 +493,12 @@ def _diagnose_similarity_prerequisites(
             {"post": "Post"},
         )
         if with_embeddings_result:
-            diagnostics["posts_with_embeddings"] = coerce_int(with_embeddings_result[0].get("count", 0))
+            diagnostics["posts_with_embeddings"] = coerce_int(
+                with_embeddings_result[0].get("count", 0)
+            )
     except Exception as exc:
         logger.debug("Posts with embeddings count failed: %s", exc)
-    
+
     # Count posts within recency window
     try:
         within_recency_result = neo4j.execute_and_fetch_labeled(
@@ -512,7 +515,7 @@ def _diagnose_similarity_prerequisites(
             diagnostics["posts_eligible"] = count
     except Exception as exc:
         logger.debug("Posts within recency count failed: %s", exc)
-    
+
     # Test query to vector index
     posts_eligible = coerce_int(diagnostics.get("posts_eligible", 0))
     if diagnostics.get("vector_index_exists") and posts_eligible > 0:
@@ -547,7 +550,7 @@ def _diagnose_similarity_prerequisites(
                     "       count(node) AS neighbors_found, "
                     "       count(CASE WHEN score > $threshold THEN 1 END) AS above_threshold"
                 )
-            
+
             test_result = neo4j.execute_and_fetch_labeled(
                 test_query,
                 {"post": "Post"},
@@ -558,16 +561,24 @@ def _diagnose_similarity_prerequisites(
                 },
                 ident_map=ident_map,
             )
-            
+
             if test_result and test_result[0].get("test_post_id") is not None:
                 diagnostics["sample_query_works"] = True
                 diagnostics["sample_post_id"] = test_result[0].get("test_post_id")
-                diagnostics["sample_neighbors_found"] = coerce_int(test_result[0].get("neighbors_found", 0))
-                diagnostics["sample_above_threshold"] = coerce_int(test_result[0].get("above_threshold", 0))
-                
+                diagnostics["sample_neighbors_found"] = coerce_int(
+                    test_result[0].get("neighbors_found", 0)
+                )
+                diagnostics["sample_above_threshold"] = coerce_int(
+                    test_result[0].get("above_threshold", 0)
+                )
+
                 scores_raw = test_result[0].get("scores", [])
                 # Use Sequence check instead of isinstance
-                if scores_raw is not None and hasattr(scores_raw, "__iter__") and hasattr(scores_raw, "__len__"):
+                if (
+                    scores_raw is not None
+                    and hasattr(scores_raw, "__iter__")
+                    and hasattr(scores_raw, "__len__")
+                ):
                     # list[float] is not directly Neo4jValue, but we store it anyway
                     # Neo4jValue includes Sequence[Mapping[...]] but not list[float]
                     # This is a diagnostic value, not a Neo4j return value
@@ -581,7 +592,7 @@ def _diagnose_similarity_prerequisites(
                     diagnostics["sample_scores"] = sample_scores
         except Exception as exc:
             logger.debug("Test query failed: %s", exc)
-    
+
     return diagnostics
 
 
@@ -630,9 +641,8 @@ def _build_similarity_graph_vector_index(
         else:
             logger.info("First similarity build, full mode (signature: %s)", current_sig)
 
-        neo4j.execute_labeled(
-            "MATCH (p:__post__)-[r:SIMILAR_TO]->() DELETE r",
-            {"post": "Post"},
+        neo4j.delete_all_similar_to_relationships(
+            batch_size=settings.apoc_batch_size,
         )
     else:
         logger.info("Similarity params unchanged, incremental mode")
@@ -640,10 +650,9 @@ def _build_similarity_graph_vector_index(
 
     # Step 1: Run diagnostics before building
     console.print("[bold cyan]Running similarity diagnostics...[/bold cyan]")
-    diagnostics = _diagnose_similarity_prerequisites(
-        neo4j, settings, embedding_index_name, top_k
-    )
+    diagnostics = _diagnose_similarity_prerequisites(neo4j, settings, embedding_index_name, top_k)
     from hintgrid.cli.console import print_similarity_diagnostics
+
     print_similarity_diagnostics(diagnostics, settings)
 
     # Step 2: Check if we should proceed
@@ -664,7 +673,7 @@ def _build_similarity_graph_vector_index(
             "MATCH (p:__post__) "
             "WHERE p.embedding IS NOT NULL "
             "  AND p.createdAt > datetime() - duration({days: $recency_days}) "
-            "RETURN id(p) AS post_id, p.embedding AS embedding"
+            "RETURN id(p) AS post_id"
         )
         count_filter = (
             "MATCH (p:__post__) "
@@ -678,7 +687,7 @@ def _build_similarity_graph_vector_index(
             "WHERE p.embedding IS NOT NULL "
             "  AND p.createdAt > datetime() - duration({days: $recency_days}) "
             "  AND NOT EXISTS { (p)-[:SIMILAR_TO]->() } "
-            "RETURN id(p) AS post_id, p.embedding AS embedding"
+            "RETURN id(p) AS post_id"
         )
         count_filter = (
             "MATCH (p:__post__) "
@@ -695,7 +704,7 @@ def _build_similarity_graph_vector_index(
         action_query = (
             "UNWIND $_batch AS row "
             "MATCH (p:__post__) WHERE id(p) = row.post_id "
-            "CALL db.index.vector.queryNodes('__embedding_index__', $top_k, row.embedding) "
+            "CALL db.index.vector.queryNodes('__embedding_index__', $top_k, p.embedding) "
             "YIELD node AS neighbor, score "
             "WHERE neighbor.id <> p.id AND score > $threshold AND neighbor:__worker__ "
             "MERGE (p)-[r:SIMILAR_TO]->(neighbor) SET r.weight = score"
@@ -704,7 +713,7 @@ def _build_similarity_graph_vector_index(
         action_query = (
             "UNWIND $_batch AS row "
             "MATCH (p:__post__) WHERE id(p) = row.post_id "
-            "CALL db.index.vector.queryNodes('__embedding_index__', $top_k, row.embedding) "
+            "CALL db.index.vector.queryNodes('__embedding_index__', $top_k, p.embedding) "
             "YIELD node AS neighbor, score "
             "WHERE neighbor.id <> p.id AND score > $threshold "
             "MERGE (p)-[r:SIMILAR_TO]->(neighbor) SET r.weight = score"
@@ -739,9 +748,7 @@ def _build_similarity_graph_vector_index(
         )
         from hintgrid.cli.console import track_periodic_iterate_progress
 
-        polling_thread = track_periodic_iterate_progress(
-            neo4j, operation_id, progress, task_id
-        )
+        polling_thread = track_periodic_iterate_progress(neo4j, operation_id, progress, task_id)
 
     try:
         result = neo4j.execute_periodic_iterate(
@@ -768,10 +775,11 @@ def _build_similarity_graph_vector_index(
         )
         if coerce_int(result.get("failedOperations", 0)) > 0:
             logger.warning("Some operations failed: %s", result.get("errorMessages", []))
-        
+
         # Collect and display detailed statistics
         similarity_stats = _collect_similarity_statistics(neo4j, settings)
         from hintgrid.cli.console import print_similarity_results
+
         print_similarity_results(result, similarity_stats, settings)
     finally:
         # Stop polling thread
@@ -796,9 +804,9 @@ def _collect_similarity_statistics(
     settings: HintGridSettings,
 ) -> dict[str, Neo4jValue]:
     """Collect statistics about created SIMILAR_TO relationships.
-    
+
     Uses execute_and_fetch_labeled with label_map={"post": "Post"}.
-    
+
     Returns:
     - total_relationships: int
     - unique_posts_with_edges: int
@@ -824,7 +832,7 @@ def _collect_similarity_statistics(
         "posts_with_edges": 0,
         "eligible_posts": 0,
     }
-    
+
     # Count total relationships and basic stats
     try:
         rel_result = neo4j.execute_and_fetch_labeled(
@@ -839,17 +847,21 @@ def _collect_similarity_statistics(
         if rel_result:
             stats["total_relationships"] = coerce_int(rel_result[0].get("total_relationships", 0))
             stats["posts_with_edges"] = coerce_int(rel_result[0].get("posts_with_edges", 0))
-            
+
             avg_score = rel_result[0].get("avg_score")
             min_score = rel_result[0].get("min_score")
             max_score = rel_result[0].get("max_score")
-            
+
             # Update score_distribution dict directly (stats is already typed as dict)
             # score_distribution is initialized as dict[str, float | None] in stats
             score_dist_raw = stats.get("score_distribution")
             # Use hasattr instead of isinstance for dict-like check
             # Runtime guarantee: score_dist is dict[str, float | None] from stats initialization
-            if score_dist_raw is not None and hasattr(score_dist_raw, "get") and hasattr(score_dist_raw, "items"):
+            if (
+                score_dist_raw is not None
+                and hasattr(score_dist_raw, "get")
+                and hasattr(score_dist_raw, "items")
+            ):
                 # score_distribution is dict[str, float | None], so we can update it
                 score_dist: dict[str, float | None] = score_dist_raw  # type: ignore[assignment]
                 if avg_score is not None:
@@ -858,14 +870,14 @@ def _collect_similarity_statistics(
                     score_dist["min"] = coerce_float(min_score, 0.0)
                 if max_score is not None:
                     score_dist["max"] = coerce_float(max_score, 0.0)
-            
+
             posts_with_edges_count = coerce_int(stats.get("posts_with_edges", 0))
             if posts_with_edges_count > 0:
                 total_rels = coerce_int(stats.get("total_relationships", 0))
                 stats["avg_edges_per_post"] = float(total_rels) / float(posts_with_edges_count)
     except Exception as exc:
         logger.debug("Relationship statistics failed: %s", exc)
-    
+
     # Get median score
     try:
         median_result = neo4j.execute_and_fetch_labeled(
@@ -881,13 +893,17 @@ def _collect_similarity_statistics(
                 score_dist_median_raw = stats.get("score_distribution")
                 # Use hasattr instead of isinstance for dict-like check
                 # Runtime guarantee: score_dist is dict[str, float | None] from stats initialization
-                if score_dist_median_raw is not None and hasattr(score_dist_median_raw, "get") and hasattr(score_dist_median_raw, "items"):
+                if (
+                    score_dist_median_raw is not None
+                    and hasattr(score_dist_median_raw, "get")
+                    and hasattr(score_dist_median_raw, "items")
+                ):
                     # score_distribution is dict[str, float | None], so we can update it
                     score_dist_median: dict[str, float | None] = score_dist_median_raw  # type: ignore[assignment]
                     score_dist_median["median"] = coerce_float(median_score, 0.0)
     except Exception as exc:
         logger.debug("Median score calculation failed: %s", exc)
-    
+
     # Count eligible posts (posts that were processed)
     try:
         eligible_result = neo4j.execute_and_fetch_labeled(
@@ -902,13 +918,13 @@ def _collect_similarity_statistics(
             stats["eligible_posts"] = coerce_int(eligible_result[0].get("count", 0))
     except Exception as exc:
         logger.debug("Eligible posts count failed: %s", exc)
-    
+
     # Calculate posts without edges
     eligible_posts_count = coerce_int(stats.get("eligible_posts", 0))
     posts_with_edges_count = coerce_int(stats.get("posts_with_edges", 0))
     if eligible_posts_count > 0:
         stats["posts_without_edges"] = eligible_posts_count - posts_with_edges_count
-    
+
     return stats
 
 
