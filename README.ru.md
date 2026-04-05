@@ -1,6 +1,6 @@
 # HintGrid - Community-Based Recommendation System
 
-> 🌐 **[English version](README.en.md)** | Русская версия
+> 🌐 **[English version](README.md)** | Русская версия
 
 HintGrid — персонализированная рекомендательная система для Mastodon, основанная на анализе сообществ. Реализована как Python-утилита для инкрементальной batch-обработки данных.
 
