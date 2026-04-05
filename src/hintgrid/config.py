@@ -106,6 +106,7 @@ DEFAULT_CHECKPOINT_INTERVAL = 1000
 DEFAULT_LOG_LEVEL = "INFO"
 DEFAULT_LOG_FILE = "hintgrid.log"
 DEFAULT_PROGRESS_OUTPUT: Literal["auto", "rich", "plain"] = "auto"
+DEFAULT_PROGRESS_POLL_INTERVAL_SECONDS = 0.5
 DEFAULT_APOC_BATCH_SIZE = 10000
 # SIMILAR_TO build runs vector index queries per post; large batches exceed Neo4j
 # transaction memory (dbms.memory.transaction.total.max) on typical instances.
@@ -340,6 +341,7 @@ class HintGridSettings(BaseSettings):
     log_file: str = Field(default=DEFAULT_LOG_FILE)
     # CLI progress: auto uses TTY detection (plain when not a terminal, e.g. systemd/journald)
     progress_output: Literal["auto", "rich", "plain"] = Field(default=DEFAULT_PROGRESS_OUTPUT)
+    progress_poll_interval_seconds: float = Field(default=DEFAULT_PROGRESS_POLL_INTERVAL_SECONDS)
 
 
 @dataclass(frozen=True)
@@ -703,6 +705,14 @@ def validate_settings(settings: HintGridSettings) -> None:
         errors.append(
             f"Invalid progress_output: '{settings.progress_output}'. "
             f"Valid: {', '.join(VALID_PROGRESS_OUTPUT)}"
+        )
+    if settings.progress_poll_interval_seconds <= 0:
+        errors.append(
+            f"progress_poll_interval_seconds must be > 0, got {settings.progress_poll_interval_seconds}"
+        )
+    if settings.progress_poll_interval_seconds > 300:
+        errors.append(
+            f"progress_poll_interval_seconds must be <= 300, got {settings.progress_poll_interval_seconds}"
         )
 
     # === Raise if errors ===

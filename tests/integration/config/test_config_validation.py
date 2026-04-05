@@ -231,6 +231,38 @@ class TestValidateSettings:
         settings = HintGridSettings(llm_batch_size=256)
         validate_settings(settings)
 
+    def test_progress_poll_interval_custom_valid(self) -> None:
+        """Custom progress_poll_interval_seconds within range should pass."""
+        settings = HintGridSettings(progress_poll_interval_seconds=2.0)
+        validate_settings(settings)
+
+    def test_progress_poll_interval_from_env_style_dict(self) -> None:
+        """model_validate should accept progress_poll_interval_seconds."""
+        settings = HintGridSettings.model_validate({"progress_poll_interval_seconds": 1.25})
+        assert settings.progress_poll_interval_seconds == 1.25
+        validate_settings(settings)
+
+    def test_progress_poll_interval_zero_raises(self) -> None:
+        """Zero progress_poll_interval_seconds should raise ConfigurationError."""
+        settings = HintGridSettings(progress_poll_interval_seconds=0.0)
+        with pytest.raises(ConfigurationError) as exc_info:
+            validate_settings(settings)
+        assert "progress_poll_interval_seconds" in str(exc_info.value)
+
+    def test_progress_poll_interval_negative_raises(self) -> None:
+        """Negative progress_poll_interval_seconds should raise ConfigurationError."""
+        settings = HintGridSettings(progress_poll_interval_seconds=-0.1)
+        with pytest.raises(ConfigurationError) as exc_info:
+            validate_settings(settings)
+        assert "progress_poll_interval_seconds" in str(exc_info.value)
+
+    def test_progress_poll_interval_too_large_raises(self) -> None:
+        """progress_poll_interval_seconds above 300 should raise ConfigurationError."""
+        settings = HintGridSettings(progress_poll_interval_seconds=301.0)
+        with pytest.raises(ConfigurationError) as exc_info:
+            validate_settings(settings)
+        assert "progress_poll_interval_seconds" in str(exc_info.value)
+
     def test_multiple_errors_collected(self) -> None:
         """Multiple validation errors should be collected and reported together."""
         settings = HintGridSettings(

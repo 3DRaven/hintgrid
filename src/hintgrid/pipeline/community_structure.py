@@ -130,6 +130,7 @@ def _run_periodic_community_structure(
             operation_id,
             progress,
             task_id,
+            poll_interval=settings.progress_poll_interval_seconds,
         )
         try:
             _run_iterate()

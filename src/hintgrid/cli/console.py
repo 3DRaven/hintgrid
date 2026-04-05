@@ -428,7 +428,11 @@ _SETTINGS_GROUPS: list[tuple[str, str, list[str]]] = [
         ],
     ),
     ("🐘 Mastodon", "green", ["mastodon_public_visibility", "mastodon_account_lookup_limit"]),
-    ("📋 Logging", "dim", ["log_level", "log_file", "progress_output"]),
+    (
+        "📋 Logging",
+        "dim",
+        ["log_level", "log_file", "progress_output", "progress_poll_interval_seconds"],
+    ),
 ]
 
 

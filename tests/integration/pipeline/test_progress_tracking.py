@@ -195,7 +195,13 @@ def test_track_periodic_iterate_progress_updates_progress_bar(
         task_id = progress.add_task("[cyan]Processing...", total=3)
 
         # Start tracking
-        thread = track_periodic_iterate_progress(neo4j, operation_id, progress, task_id)
+        thread = track_periodic_iterate_progress(
+            neo4j,
+            operation_id,
+            progress,
+            task_id,
+            poll_interval=0.1,
+        )
 
         # Simulate progress updates
         neo4j.execute(
@@ -203,14 +209,14 @@ def test_track_periodic_iterate_progress_updates_progress_bar(
             "SET pt.processed = 1, pt.batches = 1, pt.last_updated = datetime()",
             {"operation_id": operation_id},
         )
-        time.sleep(0.6)  # Wait for polling
+        time.sleep(0.15)  # Wait for polling (poll_interval=0.1)
 
         neo4j.execute(
             "MATCH (pt:ProgressTracker {id: $operation_id}) "
             "SET pt.processed = 3, pt.batches = 2, pt.last_updated = datetime()",
             {"operation_id": operation_id},
         )
-        time.sleep(0.6)  # Wait for polling
+        time.sleep(0.15)  # Wait for polling
 
         # Stop tracking
         thread.stop_event.set()

@@ -119,6 +119,7 @@ def rebuild_interests(
             operation_id,
             progress,
             task_id,
+            poll_interval=settings.progress_poll_interval_seconds,
         )
 
     try:
@@ -379,6 +380,7 @@ def refresh_interests(
                 operation_id,
                 progress,
                 task_id,
+                poll_interval=settings.progress_poll_interval_seconds,
             )
 
         try:

@@ -1414,7 +1414,13 @@ def cleanup_inactive_users(
             )
             from hintgrid.cli.console import track_periodic_iterate_progress
 
-            polling_thread = track_periodic_iterate_progress(neo4j, operation_id, progress, task_id)
+            polling_thread = track_periodic_iterate_progress(
+                neo4j,
+                operation_id,
+                progress,
+                task_id,
+                poll_interval=settings.progress_poll_interval_seconds,
+            )
 
         try:
             # Execute the step with progress tracking

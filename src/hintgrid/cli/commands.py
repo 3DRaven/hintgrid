@@ -965,6 +965,15 @@ LogFileOpt = Annotated[
         envvar="HINTGRID_LOG_FILE",
     ),
 ]
+ProgressPollIntervalSecondsOpt = Annotated[
+    float | None,
+    typer.Option(
+        "--progress-poll-interval-seconds",
+        help="Seconds between Neo4j ProgressTracker polls during apoc.periodic.iterate "
+        "progress UI. [default: 0.5]",
+        envvar="HINTGRID_PROGRESS_POLL_INTERVAL_SECONDS",
+    ),
+]
 VerboseOpt = Annotated[
     bool,
     typer.Option(
@@ -1167,6 +1176,7 @@ def run(
     # Logging
     log_level: LogLevelOpt = None,
     log_file: LogFileOpt = None,
+    progress_poll_interval_seconds: ProgressPollIntervalSecondsOpt = None,
     verbose: VerboseOpt = False,
 ) -> None:
     """Run the full HintGrid pipeline."""
@@ -1291,6 +1301,7 @@ def run(
         graph_sample_limit=graph_sample_limit,
         log_level=log_level,
         log_file=log_file,
+        progress_poll_interval_seconds=progress_poll_interval_seconds,
     )
 
     exit_code = execute_run(
@@ -1355,6 +1366,7 @@ def refresh(
     # Logging
     log_level: LogLevelOpt = None,
     log_file: LogFileOpt = None,
+    progress_poll_interval_seconds: ProgressPollIntervalSecondsOpt = None,
     verbose: VerboseOpt = False,
 ) -> None:
     """Lightweight interest refresh (no clustering, just decay + dirty recompute).
@@ -1404,6 +1416,7 @@ def refresh(
         language_match_weight=language_match_weight,
         log_level=log_level,
         log_file=log_file,
+        progress_poll_interval_seconds=progress_poll_interval_seconds,
     )
 
     exit_code = execute_refresh(
@@ -1549,6 +1562,7 @@ def export(
     # Logging
     log_level: LogLevelOpt = None,
     log_file: LogFileOpt = None,
+    progress_poll_interval_seconds: ProgressPollIntervalSecondsOpt = None,
     verbose: VerboseOpt = False,
 ) -> None:
     """Export system state to Markdown file."""
@@ -1673,6 +1687,7 @@ def export(
         graph_sample_limit=graph_sample_limit,
         log_level=log_level,
         log_file=log_file,
+        progress_poll_interval_seconds=progress_poll_interval_seconds,
     )
 
     exit_code = execute_export(
@@ -1827,6 +1842,7 @@ def train(
     # Logging
     log_level: LogLevelOpt = None,
     log_file: LogFileOpt = None,
+    progress_poll_interval_seconds: ProgressPollIntervalSecondsOpt = None,
     verbose: VerboseOpt = False,
 ) -> None:
     """Train embedding models."""
@@ -1959,6 +1975,7 @@ def train(
         graph_sample_limit=graph_sample_limit,
         log_level=log_level,
         log_file=log_file,
+        progress_poll_interval_seconds=progress_poll_interval_seconds,
     )
 
     exit_code = execute_train(
@@ -2134,6 +2151,7 @@ def clean(
     # Logging
     log_level: LogLevelOpt = None,
     log_file: LogFileOpt = None,
+    progress_poll_interval_seconds: ProgressPollIntervalSecondsOpt = None,
     verbose: VerboseOpt = False,
 ) -> None:
     """Delete data from Neo4j, Redis, and/or model files.
@@ -2263,6 +2281,7 @@ def clean(
         graph_sample_limit=graph_sample_limit,
         log_level=log_level,
         log_file=log_file,
+        progress_poll_interval_seconds=progress_poll_interval_seconds,
     )
 
     exit_code = execute_clean(
@@ -2417,6 +2436,7 @@ def get_user_info_cmd(
     # Logging
     log_level: LogLevelOpt = None,
     log_file: LogFileOpt = None,
+    progress_poll_interval_seconds: ProgressPollIntervalSecondsOpt = None,
     verbose: VerboseOpt = False,
 ) -> None:
     """Get detailed information about a Mastodon user."""
@@ -2541,6 +2561,7 @@ def get_user_info_cmd(
         graph_sample_limit=graph_sample_limit,
         log_level=log_level,
         log_file=log_file,
+        progress_poll_interval_seconds=progress_poll_interval_seconds,
     )
 
     exit_code = execute_get_user_info(
@@ -2682,6 +2703,7 @@ def validate(
     # Logging
     log_level: LogLevelOpt = None,
     log_file: LogFileOpt = None,
+    progress_poll_interval_seconds: ProgressPollIntervalSecondsOpt = None,
     verbose: VerboseOpt = False,
 ) -> None:
     """Validate configuration and show settings summary."""
@@ -2806,6 +2828,7 @@ def validate(
         graph_sample_limit=graph_sample_limit,
         log_level=log_level,
         log_file=log_file,
+        progress_poll_interval_seconds=progress_poll_interval_seconds,
     )
 
     exit_code = execute_validate(
@@ -2839,6 +2862,7 @@ def model_export(
     # Logging
     log_level: LogLevelOpt = None,
     log_file: LogFileOpt = None,
+    progress_poll_interval_seconds: ProgressPollIntervalSecondsOpt = None,
     verbose: VerboseOpt = False,
 ) -> None:
     """Export pretrained models as a single .tar.gz bundle."""
@@ -2861,6 +2885,7 @@ def model_export(
         neo4j_worker_label=neo4j_worker_label,
         log_level=log_level,
         log_file=log_file,
+        progress_poll_interval_seconds=progress_poll_interval_seconds,
     )
 
     exit_code = execute_model_export(
@@ -2895,6 +2920,7 @@ def model_import(
     # Logging
     log_level: LogLevelOpt = None,
     log_file: LogFileOpt = None,
+    progress_poll_interval_seconds: ProgressPollIntervalSecondsOpt = None,
     verbose: VerboseOpt = False,
 ) -> None:
     """Import a pretrained model bundle from a .tar.gz archive."""
@@ -2910,6 +2936,7 @@ def model_import(
         neo4j_worker_label=neo4j_worker_label,
         log_level=log_level,
         log_file=log_file,
+        progress_poll_interval_seconds=progress_poll_interval_seconds,
     )
 
     exit_code = execute_model_import(
@@ -3058,6 +3085,7 @@ def reindex(
     # Logging
     log_level: LogLevelOpt = None,
     log_file: LogFileOpt = None,
+    progress_poll_interval_seconds: ProgressPollIntervalSecondsOpt = None,
     verbose: VerboseOpt = False,
 ) -> None:
     """Force re-indexing of all embeddings."""
@@ -3182,6 +3210,7 @@ def reindex(
         graph_sample_limit=graph_sample_limit,
         log_level=log_level,
         log_file=log_file,
+        progress_poll_interval_seconds=progress_poll_interval_seconds,
     )
 
     exit_code = execute_reindex(
