@@ -2,7 +2,20 @@
 
 > 🌐 English | **[Русская версия](INSTALL.ru.md)**
 
+**Back up first.** Before install, upgrades, editing `.env`, wiping data, or any production experiment, take **backups** per your operations policy: PostgreSQL (Mastodon database), Redis (snapshot / `BGSAVE` / hoster workflow), Neo4j data (Docker volumes or host paths from compose), and the HintGrid tree (including `.env`, optional venv, FastText model files). Exact dump commands are not listed here—they depend on OS and deployment. **Without a current backup, recovery may be impossible.**
+
 Below is a full scenario for **the same machine** that runs Mastodon: shared PostgreSQL and Redis; **Neo4j** can run in Docker using [deploy/docker-compose.neo4j.yml](deploy/docker-compose.neo4j.yml) (step 3) or on another host (see [docs/REFERENCE.ru.md](docs/REFERENCE.ru.md)). Paths and username match the examples in the repository (`deploy/systemd/`).
+
+### First run, load, and later runs
+
+The first successful `hintgrid run` against an **empty or nearly empty** Neo4j graph usually **takes much longer** than later runs and places **heavy load** on CPU, disk, PostgreSQL, and Neo4j. That follows from how the pipeline is implemented:
+
+- **Incremental loading from PostgreSQL** uses cursors stored in Neo4j (`PipelineState`: `last_status_id`, interactions, stats, etc.). While cursors are still at their initial values, the pipeline pulls **the full historical volume** allowed by settings (unlike later runs, which mostly fetch **new** rows after the saved ids). The `load_since` option narrows the time window and reduces first-run work.
+- **Local FastText embeddings** (the default when no external LLM is configured): if no trained model exists, the embedding path performs **full FastText training** over a streamed corpus from PostgreSQL before vectors are computed — a long, CPU- and I/O-intensive phase.
+- **Neo4j GDS analytics** (user/post clustering, PageRank, similarity graph, etc.) run over the **graph built in that run**; on the first run the graph is largest, so this phase costs more than when only deltas were added since the previous run.
+- **Personalized feed generation** defaults to users whose graph state changed (“dirty”); the **first** run may need to process **all** active users, which is slower and stresses Neo4j and Redis more.
+
+**Later** runs are typically **shorter and lighter**: cursor-based incremental loads, an existing embedding model (no full retrain while settings stay the same), and fewer feed updates — unless you force a full refresh (`feed_force_refresh` or similar) or change embedding settings (which can trigger migration and re-embedding).
 
 ### 1. System packages and user
 
@@ -210,3 +223,46 @@ Full “no schedule and no start on boot”: `stop` + `disable` for the timer; o
 ### 9. Updating the package after deploy
 
 After installing a new wheel into the same venv (`pip install --force-reinstall ...`), restarting the timer is usually **not** required — the next run picks up the code. If needed: `sudo systemctl restart hintgrid-run.timer`.
+
+### 10. Clearing HintGrid recommendations in Redis (restore Mastodon behavior)
+
+If timelines misbehave because of HintGrid entries in Redis, the normal approach is to **remove only HintGrid members from the sorted sets (ZSETs)** and keep native Mastodon rows (score equals post id; HintGrid uses rank-based scores with a multiplier).
+
+#### Recommended: `hintgrid clean --redis`
+
+**Project-supported method** — the HintGrid CLI (same config as the pipeline — run from the directory that contains `.env`):
+
+```bash
+sudo systemctl stop hintgrid-run.timer
+sudo systemctl stop hintgrid-run.service
+sudo -u hintgrid bash -lc 'cd /opt/hintgrid && /opt/hintgrid/venv/bin/hintgrid clean --redis'
+```
+
+**`hintgrid clean --redis`** removes **ZSET members only** (not whole keys): for each **local** user from the Neo4j graph it strips entries in `feed:home:<user_id>` whose score does not match the post id (within `HINTGRID_REDIS_SCORE_TOLERANCE`); if public feeds are enabled, it does the same for the public timeline keys (`HINTGRID_PUBLIC_TIMELINE_KEY`, `HINTGRID_LOCAL_TIMELINE_KEY`) with `HINTGRID_REDIS_NAMESPACE` applied. **Neo4j and on-disk models are untouched.** Neo4j access is required to list users, same as a normal `hintgrid run`.
+
+Integration tests: `tests/integration/cli/test_clean.py` (`test_cli_clean_redis_only`), full `hintgrid clean` checks in `tests/integration/cli/test_basic.py` (`test_cli_clean_removes_hintgrid_entries`).
+
+#### Manual: selective `ZSCAN` / `ZREM`
+
+You can mirror the code’s logic by hand: for each relevant key, `ZSCAN` and `ZREM` only members where the score does not match the post id (within tolerance). Labor-intensive but does not delete whole keys. These flows are **not** covered by HintGrid’s automated tests.
+
+#### Not recommended: deleting entire feed keys with `redis-cli`
+
+The following is **not verified** by the HintGrid team, is **dangerous**, and **may break** your instance: deleting a whole key drops the entire ZSET, including native Mastodon rows in Redis; Mastodon’s behavior afterward **depends on version and load**. Use **only** if you understand the risk and have a **backup** (see the warning at the top of this document). Prefer **`hintgrid clean --redis`** first.
+
+- Public timelines (adjust prefix from `HINTGRID_REDIS_NAMESPACE`, DB index from `HINTGRID_REDIS_DB`):
+
+```bash
+redis-cli -n 0 DEL 'cache:timeline:public' 'cache:timeline:public:local'
+```
+
+- Home feeds — list keys, then **`DEL` each key** (destructive):
+
+```bash
+redis-cli -n 0 --scan --pattern 'feed:home:*'
+# then per key: redis-cli -n 0 DEL '<key>'
+```
+
+- **`FLUSHDB`** on a Redis DB index wipes **everything** in that logical database; on a typical Mastodon + HintGrid host they often share one DB with other cache data — **high risk**; **not recommended** in HintGrid docs.
+
+If **`HINTGRID_FEED_SCORE_MULTIPLIER`** is `1`, selective removal in code does nothing. First set the multiplier to **at least 2** (as in `env.example`), rerun the pipeline if needed, then **`hintgrid clean --redis`**. Deleting keys manually is a last resort with the warnings above.

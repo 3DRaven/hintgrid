@@ -27,7 +27,7 @@ HintGrid — персонализированная рекомендательн
 
 ## Установка на сервере Mastodon (systemd)
 
-Пошаговая инструкция: PostgreSQL (роль только на чтение), Neo4j в Docker, `.env`, unit-файлы systemd, пути `/opt/hintgrid` — в **[INSTALL.ru.md](INSTALL.ru.md)** и **[INSTALL.md](INSTALL.md)** (English).
+Пошаговая инструкция: PostgreSQL (роль только на чтение), Neo4j в Docker, `.env`, unit-файлы systemd, пути `/opt/hintgrid` — в **[INSTALL.ru.md](INSTALL.ru.md)** и **[INSTALL.md](INSTALL.md)** (English). Первый запуск пайплайна дольше и сильнее нагружает сервер, чем последующие — см. раздел **«Первый запуск, нагрузка и последующие прогоны»** в INSTALL.
 
 ## CLI параметры (описания)
 

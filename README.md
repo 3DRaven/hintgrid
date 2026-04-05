@@ -27,7 +27,7 @@ Full reference documentation is in [docs/REFERENCE.ru.md](docs/REFERENCE.ru.md).
 
 ## Installing on a Mastodon server (systemd)
 
-Step-by-step guide: PostgreSQL read-only role, Neo4j in Docker, `.env`, systemd units, paths under `/opt/hintgrid` — see **[INSTALL.md](INSTALL.md)** and **[INSTALL.ru.md](INSTALL.ru.md)** (Russian).
+Step-by-step guide: PostgreSQL read-only role, Neo4j in Docker, `.env`, systemd units, paths under `/opt/hintgrid` — see **[INSTALL.md](INSTALL.md)** and **[INSTALL.ru.md](INSTALL.ru.md)** (Russian). The first pipeline run takes longer and stresses the server more than later runs — see **First run, load, and later runs** in INSTALL.
 
 ## CLI parameters (overview)
 
