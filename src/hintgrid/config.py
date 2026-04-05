@@ -310,7 +310,7 @@ class HintGridSettings(BaseSettings):
     prune_similarity_threshold: float = Field(default=DEFAULT_PRUNE_SIMILARITY_THRESHOLD)
     prune_days: int = Field(default=DEFAULT_PRUNE_DAYS)
     leiden_max_levels: int = Field(default=DEFAULT_LEIDEN_MAX_LEVELS)
-    leiden_diagnostics_enabled: bool = Field(default=DEFAULT_LEIDEN_DIAGNOSTICS_ENABLED)
+    leiden_diagnostics: bool = Field(default=DEFAULT_LEIDEN_DIAGNOSTICS_ENABLED)
     similarity_recency_days: int = Field(default=DEFAULT_SIMILARITY_RECENCY_DAYS)
     knn_self_neighbor_offset: int = Field(default=DEFAULT_KNN_SELF_NEIGHBOR_OFFSET)
 

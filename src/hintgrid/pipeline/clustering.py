@@ -239,11 +239,11 @@ def run_user_clustering(
             )
 
         pre_leiden_stats = None
-        if settings.leiden_diagnostics_enabled:
+        if settings.leiden_diagnostics:
             pre_leiden_stats = collect_user_interaction_graph_stats(neo4j)
 
         yield_fragment = leiden_write_yield_clause(
-            extended=settings.leiden_diagnostics_enabled,
+            extended=settings.leiden_diagnostics,
         )
         user_leiden_cypher: LiteralString = (
             "CALL gds.leiden.write('__graph_name__', {"
@@ -269,7 +269,7 @@ def run_user_clustering(
             community_count = coerce_int(result[0].get("communityCount", 0))
             print_success(f"Found {community_count:,} communities")
             leiden_result = result[0]
-            if settings.leiden_diagnostics_enabled:
+            if settings.leiden_diagnostics:
                 log_leiden_clustering_diagnostics(
                     logger,
                     graph_kind="user_interaction",
@@ -378,11 +378,11 @@ def run_post_clustering(
                 },
             )
         pre_similarity_stats = None
-        if settings.leiden_diagnostics_enabled:
+        if settings.leiden_diagnostics:
             pre_similarity_stats = collect_post_similarity_graph_stats(neo4j)
 
         post_yield_fragment = leiden_write_yield_clause(
-            extended=settings.leiden_diagnostics_enabled,
+            extended=settings.leiden_diagnostics,
         )
         post_leiden_cypher: LiteralString = (
             "CALL gds.leiden.write('__graph_name__', {"
@@ -407,7 +407,7 @@ def run_post_clustering(
             community_count = coerce_int(result[0].get("communityCount", 0))
             print_success(f"Found {community_count:,} post communities")
             leiden_result = result[0]
-            if settings.leiden_diagnostics_enabled:
+            if settings.leiden_diagnostics:
                 log_leiden_clustering_diagnostics(
                     logger,
                     graph_kind="post_similarity",
