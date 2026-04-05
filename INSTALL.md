@@ -74,6 +74,8 @@ More on privileges and options in [Database setup](README.md#database-setup) in 
 
 ### 3. Neo4j in Docker on the same host
 
+**Memory.** Neo4j needs a large amount of RAM: for a typical instance with roughly **2.5 million posts** in the graph, plan for about **8 GB of RAM** per Neo4j instance (plus headroom for GDS spikes). Size the host or container limits accordingly.
+
 A **Neo4j-only** compose file (GDS + APOC): [deploy/docker-compose.neo4j.yml](deploy/docker-compose.neo4j.yml). Data is stored on the host under `data/`, `logs/`, `import/`, and `plugins/` next to the compose file.
 
 Install Docker and **Compose v2** if needed, then (as `hintgrid`, or use `root` and fix ownership). The **package name** for the `docker compose` plugin **varies by distro**:

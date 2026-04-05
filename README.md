@@ -125,6 +125,10 @@ Connection check:
 psql -h localhost -U hintgrid -d mastodon_production -c "SELECT COUNT(*) FROM accounts;"
 ```
 
+### Neo4j (memory planning)
+
+Neo4j is memory-hungry: for a typical graph of roughly **2.5 million posts**, plan about **8 GB RAM** per Neo4j instance (plus headroom for GDS). See [INSTALL.md](INSTALL.md) for Docker deployment.
+
 ### Redis (optional password)
 
 If Redis requires authentication, configure a password:

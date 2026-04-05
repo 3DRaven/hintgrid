@@ -116,6 +116,10 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO hintgrid;
 psql -h localhost -U hintgrid -d mastodon_production -c "SELECT COUNT(*) FROM accounts;"
 ```
 
+### Neo4j (память)
+
+Neo4j требует много оперативной памяти: для типичного графа порядка **2,5 млн постов** закладывайте около **8 ГБ RAM** на экземпляр Neo4j (плюс запас на пиковые операции GDS). Подробнее — в [INSTALL.ru.md](INSTALL.ru.md) (развёртывание в Docker).
+
 ### Redis (опциональная настройка пароля)
 
 Если Redis требует аутентификацию, настройте пароль:
