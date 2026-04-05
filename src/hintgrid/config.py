@@ -88,6 +88,9 @@ DEFAULT_LEIDEN_MAX_LEVELS = 10
 DEFAULT_LEIDEN_DIAGNOSTICS_ENABLED = False
 DEFAULT_SINGLETON_COLLAPSE_ENABLED = True
 DEFAULT_NOISE_COMMUNITY_ID = -1
+# 0 = one Cypher transaction (no CALL/IN TRANSACTIONS). >0 = batch size for
+# SET after UNWIND (Neo4j 5+), limits memory per transaction on huge post graphs.
+DEFAULT_SINGLETON_COLLAPSE_IN_TRANSACTIONS_OF = 100_000
 DEFAULT_SIMILARITY_RECENCY_DAYS = 7
 DEFAULT_KNN_SELF_NEIGHBOR_OFFSET = 1
 DEFAULT_EXPORT_MAX_ITEMS = 50
@@ -315,6 +318,9 @@ class HintGridSettings(BaseSettings):
     leiden_diagnostics: bool = Field(default=DEFAULT_LEIDEN_DIAGNOSTICS_ENABLED)
     singleton_collapse_enabled: bool = Field(default=DEFAULT_SINGLETON_COLLAPSE_ENABLED)
     noise_community_id: int = Field(default=DEFAULT_NOISE_COMMUNITY_ID)
+    singleton_collapse_in_transactions_of: int = Field(
+        default=DEFAULT_SINGLETON_COLLAPSE_IN_TRANSACTIONS_OF
+    )
     similarity_recency_days: int = Field(default=DEFAULT_SIMILARITY_RECENCY_DAYS)
     knn_self_neighbor_offset: int = Field(default=DEFAULT_KNN_SELF_NEIGHBOR_OFFSET)
 
@@ -538,6 +544,16 @@ def validate_settings(settings: HintGridSettings) -> None:
             "noise_community_id must not be 0 (reserved for single-cluster fallback "
             "when the interaction/similarity graph has no edges); "
             f"got {settings.noise_community_id}"
+        )
+    if settings.singleton_collapse_in_transactions_of < 0:
+        errors.append(
+            "singleton_collapse_in_transactions_of must be >= 0 "
+            f"(0 = single transaction), got {settings.singleton_collapse_in_transactions_of}"
+        )
+    if settings.singleton_collapse_in_transactions_of > 100_000:
+        errors.append(
+            "singleton_collapse_in_transactions_of too large: "
+            f"{settings.singleton_collapse_in_transactions_of} (max 100000)"
         )
     if settings.knn_neighbors < 1:
         errors.append(f"knn_neighbors must be >= 1, got {settings.knn_neighbors}")

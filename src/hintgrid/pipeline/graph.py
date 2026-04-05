@@ -83,6 +83,32 @@ def _get_embedding_index_name(neo4j: Neo4jClient) -> str:
     return "post_embedding_index"
 
 
+def _ensure_relationship_property_indexes(neo4j: Neo4jClient, worker_suffix: str) -> None:
+    """Create range indexes on relationship properties used in feed and pruning queries.
+
+    Neo4j 5+ supports indexes on relationship types; names get worker_suffix
+    like node indexes for parallel test catalog isolation.
+    """
+    rel_index_defs: list[tuple[str, str, str]] = [
+        ("rel_interested_in_last_updated", "INTERESTED_IN", "last_updated"),
+        ("rel_was_recommended_at", "WAS_RECOMMENDED", "at"),
+        ("rel_similar_to_weight", "SIMILAR_TO", "weight"),
+    ]
+    for name_base, rel_type, prop in rel_index_defs:
+        try:
+            neo4j.execute_labeled(
+                "CREATE INDEX __name__ IF NOT EXISTS FOR ()-[r:__rel__]-() ON (r.__prop__)",
+                label_map=None,
+                ident_map={
+                    "name": f"{name_base}{worker_suffix}",
+                    "rel": rel_type,
+                    "prop": prop,
+                },
+            )
+        except Exception as exc:  # pragma: no cover - index may already exist
+            logger.debug("Relationship index creation skipped: %s", exc)
+
+
 def ensure_graph_indexes(neo4j: Neo4jClient, settings: HintGridSettings) -> None:
     """Create Neo4j constraints and indexes.
 
@@ -109,6 +135,7 @@ def ensure_graph_indexes(neo4j: Neo4jClient, settings: HintGridSettings) -> None
             ("user_id_unique", "User"),
             ("post_id_unique", "Post"),
             ("app_state_id_unique", "AppState"),
+            ("progress_tracker_id_unique", "ProgressTracker"),
         ]
         for name_base, base_label in constraint_defs:
             try:
@@ -127,13 +154,18 @@ def ensure_graph_indexes(neo4j: Neo4jClient, settings: HintGridSettings) -> None
     # index syntax (FOR (n:A:B) ON ...).  A global index on :User
     # covers all nodes with that label, including those with additional
     # worker labels used for test isolation.
+    # cluster_id: used after GDS Leiden write and singleton collapse; same base-label rule as above.
     index_defs = [
         ("post_created_at", "Post", "createdAt"),
         ("post_author_id", "Post", "authorId"),
+        ("post_cluster_id", "Post", "cluster_id"),
         ("user_username", "User", "username"),
         ("user_last_active", "User", "lastActive"),
         ("user_feed_generated_at", "User", "feedGeneratedAt"),
         ("user_is_local", "User", "isLocal"),
+        ("user_cluster_id", "User", "cluster_id"),
+        ("user_community_id", "UserCommunity", "id"),
+        ("post_community_id", "PostCommunity", "id"),
     ]
     for name_base, base_label, prop in index_defs:
         try:
@@ -148,6 +180,8 @@ def ensure_graph_indexes(neo4j: Neo4jClient, settings: HintGridSettings) -> None
             )
         except Exception as exc:  # pragma: no cover - index may already exist
             logger.debug("Index creation skipped: %s", exc)
+
+    _ensure_relationship_property_indexes(neo4j, worker_suffix)
 
     # Vector index needs special handling
     # Neo4j CREATE INDEX does not support parameters for OPTIONS,

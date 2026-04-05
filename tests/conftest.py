@@ -382,6 +382,7 @@ def _setup_neo4j_indexes(info: DockerComposeInfo) -> None:
                 "user_community_id_unique",
                 "post_community_id_unique",
                 "app_state_id_unique",
+                "progress_tracker_id_unique",
             ]
             for base_name in known_bases:
                 # IF EXISTS should not raise, but catch any unexpected errors
@@ -394,12 +395,19 @@ def _setup_neo4j_indexes(info: DockerComposeInfo) -> None:
                     # Log but don't fail - constraint may not exist
                     print(f"Warning: Could not drop constraint {base_name}: {e}")
 
-        # Also remove global indexes that might conflict
+        # Also remove global indexes that might conflict (base names without worker suffix).
+        # SHOW INDEXES + DROP INDEX is not used here; list matches ensure_graph_indexes
+        # naming for non-xdist / local runs.
         global_indexes = [
             "post_created_at",
             "post_author_id",
             "user_username",
             "post_embedding_index",
+            "user_community_id",
+            "post_community_id",
+            "rel_interested_in_last_updated",
+            "rel_was_recommended_at",
+            "rel_similar_to_weight",
         ]
         for index_name in global_indexes:
             client.execute_labeled(

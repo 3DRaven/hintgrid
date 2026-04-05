@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import logging
-import uuid
-from typing import TYPE_CHECKING, LiteralString
+import re
+from typing import TYPE_CHECKING, LiteralString, cast
 
 if TYPE_CHECKING:
     from hintgrid.clients.neo4j import Neo4jClient, Neo4jParameter
@@ -16,24 +16,54 @@ from hintgrid.utils.coercion import coerce_int
 
 logger = logging.getLogger(__name__)
 
-_COUNT_POST_SINGLETON_CLUSTERS: LiteralString = (
-    "MATCH (p:__entity__) WHERE p.cluster_id IS NOT NULL "
-    "WITH p.cluster_id AS cid, count(*) AS n "
-    "WHERE n = 1 "
-    "RETURN count(*) AS total"
+_BULK_SET_SINGLETON_NO_BATCH: LiteralString = (
+    "MATCH (n:__entity__) WHERE n.cluster_id IS NOT NULL "
+    "WITH n.cluster_id AS cid, collect(n) AS nodes, count(*) AS cnt "
+    "WHERE cnt = 1 "
+    "UNWIND nodes AS singleton "
+    "SET singleton.cluster_id = $noise_community_id "
+    "RETURN count(singleton) AS updated"
 )
-_ITERATE_POST_SINGLETON_NODES: LiteralString = (
-    "MATCH (p:__entity__) WHERE p.cluster_id IS NOT NULL "
-    "WITH p.cluster_id AS cid, count(*) AS n "
-    "WHERE n = 1 "
-    "MATCH (p2:__entity__) WHERE p2.cluster_id = cid "
-    "RETURN id(p2) AS node_id"
-)
-_ACTION_SET_CLUSTER: LiteralString = (
-    "UNWIND $_batch AS row "
-    "MATCH (p:__entity__) WHERE id(p) = row.node_id "
-    "SET p.cluster_id = $noise_community_id"
-)
+
+
+def _safe_label_fragment(label: str) -> str:
+    """Ensure interpolated label string is safe for Cypher (no injection)."""
+    if not _SAFE_LABEL_RE.fullmatch(label):
+        raise ValueError(f"Unsafe Neo4j label for collapse query: {label!r}")
+    return label
+
+
+_SAFE_LABEL_RE = re.compile(r"[A-Za-z0-9_:]+")
+
+
+def _run_bulk_collapse_batched(
+    neo4j: Neo4jClient,
+    *,
+    entity_base_label: str,
+    batch: int,
+    noise_community_id: int,
+) -> None:
+    """SET cluster_id in sub-batches (CALL/IN TRANSACTIONS) for large graphs."""
+    entity_label = _safe_label_fragment(neo4j.label(entity_base_label))
+    params: dict[str, Neo4jParameter] = {"noise_community_id": noise_community_id}
+    cypher = (
+        f"MATCH (n:{entity_label}) WHERE n.cluster_id IS NOT NULL "
+        "WITH n.cluster_id AS cid, collect(n) AS nodes, count(*) AS cnt "
+        "WHERE cnt = 1 "
+        "UNWIND nodes AS singleton "
+        "CALL { "
+        "WITH * "
+        "SET singleton.cluster_id = $noise_community_id "
+        "RETURN 1 AS batch_done "
+        f"}} IN TRANSACTIONS OF {batch} ROWS "
+        "RETURN 1 AS collapse_done"
+    )
+    neo4j.execute(cast("LiteralString", cypher), params)
+    logger.info(
+        "Singleton collapse (IN TRANSACTIONS OF %s rows): finished for label %s",
+        batch,
+        entity_label,
+    )
 
 
 def _collapse_singleton_entity_clusters(
@@ -43,8 +73,6 @@ def _collapse_singleton_entity_clusters(
     label_map: dict[str, str],
     progress: HintGridProgress | None,
     console_status: str,
-    progress_task_title: str,
-    done_task_description: str,
     log_label: str,
 ) -> None:
     """Set cluster_id to noise_community_id for every node in a size-1 Leiden cluster."""
@@ -52,79 +80,66 @@ def _collapse_singleton_entity_clusters(
         logger.info("Singleton collapse disabled, skipping %s", log_label)
         return
 
-    count_result = neo4j.execute_and_fetch_labeled(
-        _COUNT_POST_SINGLETON_CLUSTERS,
-        label_map,
-    )
-    total = (
-        coerce_int(count_result[0].get("total", 0), 0) if count_result else 0
-    )
-
-    if total == 0:
-        logger.info("No singleton %s clusters to collapse", log_label)
-        return
-
-    logger.info(
-        "Collapsing %d singleton %s clusters to noise_community_id=%s",
-        total,
-        log_label,
-        settings.noise_community_id,
-    )
-
+    base_label = label_map["entity"]
     params: dict[str, Neo4jParameter] = {
         "noise_community_id": settings.noise_community_id,
     }
+    in_tx = settings.singleton_collapse_in_transactions_of
 
-    operation_id = f"singleton_collapse_{log_label}_{uuid.uuid4().hex[:8]}"
-
-    def _run_iterate() -> None:
-        result = neo4j.execute_periodic_iterate(
-            _ITERATE_POST_SINGLETON_NODES,
-            _ACTION_SET_CLUSTER,
-            label_map=label_map,
-            batch_size=settings.apoc_batch_size,
-            parallel=False,
-            batch_mode="BATCH",
-            progress_tracker_id=operation_id if progress is not None else None,
-            params=params,
-        )
-        logger.info(
-            "%s singleton collapse: batches=%s total=%s committed=%s failed=%s",
-            log_label,
-            coerce_int(result.get("batches", 0)),
-            coerce_int(result.get("total", 0)),
-            coerce_int(result.get("committedOperations", 0)),
-            coerce_int(result.get("failedOperations", 0)),
-        )
-        if coerce_int(result.get("failedOperations", 0)) > 0:
-            logger.warning(
-                "Some %s singleton collapse batch operations failed: %s",
-                log_label,
-                result.get("errorMessages", []),
+    def _run() -> None:
+        if in_tx <= 0:
+            # Single Cypher transaction: one aggregation + SET (no separate COUNT scan).
+            rows = neo4j.execute_and_fetch_labeled(
+                _BULK_SET_SINGLETON_NO_BATCH,
+                label_map,
+                params,
             )
+            updated = (
+                coerce_int(rows[0].get("updated", 0), 0) if rows else 0
+            )
+            if updated == 0:
+                logger.info("No singleton %s clusters to collapse", log_label)
+                return
+            logger.info(
+                "Singleton collapse (single transaction): collapsed %d singleton %s "
+                "cluster(s) to noise_community_id=%s",
+                updated,
+                log_label,
+                settings.noise_community_id,
+            )
+            return
+
+        # Batched path: no separate COUNT — same aggregation runs inside the query below.
+        logger.info(
+            "Singleton collapse (batched): %s, noise_community_id=%s, "
+            "IN TRANSACTIONS OF %s ROWS",
+            log_label,
+            settings.noise_community_id,
+            in_tx,
+        )
+        _run_bulk_collapse_batched(
+            neo4j,
+            entity_base_label=base_label,
+            batch=in_tx,
+            noise_community_id=settings.noise_community_id,
+        )
 
     if progress is not None:
-        neo4j.create_progress_tracker(operation_id, total)
-        task_id = progress.add_task(progress_task_title, total=total)
-        from hintgrid.cli.console import track_periodic_iterate_progress
-
-        polling_thread = track_periodic_iterate_progress(
-            neo4j,
-            operation_id,
-            progress,
-            task_id,
-            poll_interval=settings.progress_poll_interval_seconds,
+        task_id = progress.add_task(
+            f"[cyan]Collapsing singleton {log_label} clusters...",
+            total=1,
         )
         try:
-            _run_iterate()
+            _run()
         finally:
-            polling_thread.stop_event.set()
-            polling_thread.join(timeout=2.0)
-            neo4j.cleanup_progress_tracker(operation_id)
-            progress.update(task_id, description=done_task_description)
+            progress.update(
+                task_id,
+                completed=1,
+                description=f"[green]✓ Singleton {log_label} clusters collapsed",
+            )
     else:
         with console.status(console_status):
-            _run_iterate()
+            _run()
 
 
 def collapse_singleton_post_clusters(
@@ -141,8 +156,6 @@ def collapse_singleton_post_clusters(
         label_map=label_map,
         progress=progress,
         console_status="[bold blue]Collapsing singleton post clusters...[/bold blue]",
-        progress_task_title="[cyan]Collapsing singleton post clusters...",
-        done_task_description="[green]✓ Singleton post clusters collapsed",
         log_label="post",
     )
 
@@ -161,7 +174,5 @@ def collapse_singleton_user_clusters(
         label_map=label_map,
         progress=progress,
         console_status="[bold blue]Collapsing singleton user clusters...[/bold blue]",
-        progress_task_title="[cyan]Collapsing singleton user clusters...",
-        done_task_description="[green]✓ Singleton user clusters collapsed",
         log_label="user",
     )

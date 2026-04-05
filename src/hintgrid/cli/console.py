@@ -337,6 +337,7 @@ _SETTINGS_GROUPS: list[tuple[str, str, list[str]]] = [
             "leiden_diagnostics",
             "singleton_collapse_enabled",
             "noise_community_id",
+            "singleton_collapse_in_transactions_of",
             "knn_neighbors",
             "knn_self_neighbor_offset",
             "similarity_threshold",

@@ -35,7 +35,7 @@ _RETURN_COUNT: LiteralString = "RETURN count(*) AS total"
 
 _INTEREST_MATCH_CORE: LiteralString = (
     "MATCH (u)-[:BELONGS_TO]->(uc:__uc__), (p)-[:BELONGS_TO]->(pc:__pc__) "
-    "WHERE uc.id <> $noise_community_id AND pc.id <> $noise_community_id"
+    "WHERE uc.id <> $noise_community_id AND pc.id <> $noise_community_id "
 )
 
 

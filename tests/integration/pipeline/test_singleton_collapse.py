@@ -22,6 +22,33 @@ if TYPE_CHECKING:
 
 
 @pytest.mark.integration
+def test_collapse_singleton_post_clusters_in_transactions_path(
+    neo4j: Neo4jClient,
+    settings: HintGridSettings,
+) -> None:
+    """Batched CALL/IN TRANSACTIONS path matches single-transaction semantics."""
+    neo4j.execute_labeled(
+        "CREATE (a:__post__ {id: 1, cluster_id: 10}), "
+        "(b:__post__ {id: 2, cluster_id: 10}), "
+        "(c:__post__ {id: 3, cluster_id: 20})",
+        {"post": "Post"},
+    )
+    noise = settings.noise_community_id
+    batched = settings.model_copy(update={"singleton_collapse_in_transactions_of": 1})
+    collapse_singleton_post_clusters(neo4j, batched)
+    rows = list(
+        neo4j.execute_and_fetch_labeled(
+            "MATCH (p:__post__) RETURN p.id AS id, p.cluster_id AS cid ORDER BY p.id",
+            {"post": "Post"},
+        )
+    )
+    by_id = {coerce_int(r["id"]): coerce_int(r["cid"]) for r in rows}
+    assert by_id[1] == 10
+    assert by_id[2] == 10
+    assert by_id[3] == noise
+
+
+@pytest.mark.integration
 def test_collapse_singleton_post_clusters_rewrites_cluster_ids(
     neo4j: Neo4jClient,
     settings: HintGridSettings,

@@ -217,6 +217,20 @@ class TestClusteringValidation:
             validate_settings(settings)
         assert "noise_community_id" in str(exc_info.value)
 
+    def test_invalid_singleton_collapse_in_transactions_of_negative(self) -> None:
+        """singleton_collapse_in_transactions_of < 0 must raise."""
+        settings = HintGridSettings(singleton_collapse_in_transactions_of=-1)
+        with pytest.raises(ConfigurationError) as exc_info:
+            validate_settings(settings)
+        assert "singleton_collapse_in_transactions_of" in str(exc_info.value)
+
+    def test_invalid_singleton_collapse_in_transactions_of_too_large(self) -> None:
+        """singleton_collapse_in_transactions_of above max must raise."""
+        settings = HintGridSettings(singleton_collapse_in_transactions_of=100_001)
+        with pytest.raises(ConfigurationError) as exc_info:
+            validate_settings(settings)
+        assert "singleton_collapse_in_transactions_of" in str(exc_info.value)
+
     def test_invalid_knn_neighbors(self) -> None:
         """knn_neighbors < 1 should raise ConfigurationError."""
         settings = HintGridSettings(knn_neighbors=0)
