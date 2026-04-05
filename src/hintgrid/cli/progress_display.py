@@ -161,9 +161,7 @@ class PlainProgress:
             if should:
                 self._last_emit_percent[task_id] = pct
                 self._last_emit_time[task_id] = now
-                line = (
-                    f"progress {pct}% ({int(t.completed):,}/{int(t.total):,}) {plain_desc}"
-                )
+                line = f"progress {pct}% ({int(t.completed):,}/{int(t.total):,}) {plain_desc}"
                 _PROGRESS_LOGGER.info("%s", line)
             return
 
@@ -317,9 +315,7 @@ def track_periodic_iterate_progress(
                         )
                     progress.update(
                         task_id,
-                        description=(
-                            f"Processed {processed:,} items ({batches} batches)"
-                        ),
+                        description=(f"Processed {processed:,} items ({batches} batches)"),
                     )
 
                 last_processed = processed

@@ -6,8 +6,15 @@ Tests ColoredFormatter with and without color support.
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
-from hintgrid.logging import ColoredFormatter
+from hintgrid.config import HintGridSettings
+from hintgrid.logging import ColoredFormatter, setup_logging
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    import pytest
 
 
 class TestColoredFormatter:
@@ -110,3 +117,54 @@ class TestColoredFormatter:
         result = formatter.format(record)
         assert "ERROR" in result
         assert "Something went wrong: details" in result
+
+
+def _console_stream_handlers(root: logging.Logger) -> list[logging.Handler]:
+    """Handlers that are StreamHandler but not FileHandler (console only)."""
+    return [
+        h
+        for h in root.handlers
+        if isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler)
+    ]
+
+
+class TestSetupLogging:
+    """Tests for setup_logging console handler level."""
+
+    def test_console_handler_level_matches_info(self, tmp_path: Path) -> None:
+        """Console StreamHandler uses INFO when log_level is INFO."""
+        log_path = tmp_path / "app.log"
+        settings = HintGridSettings.model_validate({"log_file": str(log_path), "log_level": "INFO"})
+        setup_logging(settings)
+        root = logging.getLogger()
+        consoles = _console_stream_handlers(root)
+        assert len(consoles) == 1
+        assert consoles[0].level == logging.INFO
+
+    def test_console_handler_level_matches_debug(self, tmp_path: Path) -> None:
+        """Console StreamHandler uses DEBUG when log_level is DEBUG."""
+        log_path = tmp_path / "app.log"
+        settings = HintGridSettings.model_validate({"log_file": str(log_path), "log_level": "DEBUG"})
+        setup_logging(settings)
+        root = logging.getLogger()
+        consoles = _console_stream_handlers(root)
+        assert len(consoles) == 1
+        assert consoles[0].level == logging.DEBUG
+
+    def test_hintgrid_progress_info_reaches_stderr(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+        """Plain progress logger INFO appears on stderr when log_level is INFO."""
+        settings = HintGridSettings.model_validate({"log_file": str(tmp_path / "app.log"), "log_level": "INFO"})
+        setup_logging(settings)
+        logging.getLogger("hintgrid.progress").info("progress 50% (1/2) task")
+        err = capsys.readouterr().err
+        assert "progress 50%" in err
+
+    def test_hintgrid_progress_info_hidden_when_log_level_warning(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """INFO progress lines follow global log_level (hidden when WARNING)."""
+        settings = HintGridSettings.model_validate({"log_file": str(tmp_path / "app.log"), "log_level": "WARNING"})
+        setup_logging(settings)
+        logging.getLogger("hintgrid.progress").info("should not appear on console")
+        err = capsys.readouterr().err
+        assert "should not appear on console" not in err

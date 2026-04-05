@@ -41,8 +41,10 @@ def setup_logging(settings: HintGridSettings) -> None:
     Sets up file handler with full format and console handler with compact format.
     Console output uses colors when writing to a terminal.
 
-    Console handler shows only WARNING and above by default to avoid mixing
-    with Rich progress bars. Use --verbose flag to see INFO/DEBUG on console.
+    Console handler uses the same level as ``log_level`` (and the file handler), so
+    plain progress lines (``hintgrid.progress``, INFO) reach stderr/journald when
+    ``HINTGRID_LOG_LEVEL`` is INFO. For a quieter console, raise ``log_level`` to
+    WARNING. ``--verbose`` sets DEBUG and shows full detail on the console.
     """
     log_level = getattr(logging, settings.log_level.upper(), logging.INFO)
 
@@ -72,12 +74,9 @@ def setup_logging(settings: HintGridSettings) -> None:
     file_handler.setFormatter(file_formatter)
     root_logger.addHandler(file_handler)
 
-    # Console handler with compact colored format
-    # Default to WARNING to avoid mixing with Rich progress bars
-    # In verbose mode (DEBUG level), show all messages on console
+    # Console handler with compact colored format (same level as file and root)
     console_handler = logging.StreamHandler()
-    console_level = log_level if log_level <= logging.DEBUG else logging.WARNING
-    console_handler.setLevel(console_level)
+    console_handler.setLevel(log_level)
     console_handler.setFormatter(console_formatter)
     root_logger.addHandler(console_handler)
 

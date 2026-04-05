@@ -122,7 +122,9 @@ class HintGridApp:
                 "user_clustering",
                 "User clustering",
                 lambda progress: run_user_clustering(
-                    self.neo4j, self.settings, progress,
+                    self.neo4j,
+                    self.settings,
+                    progress,
                 ),
             ),
             (

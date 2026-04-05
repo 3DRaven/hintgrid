@@ -191,7 +191,6 @@ class HintGridSettings(BaseSettings):
     neo4j_password: str = Field(default=DEFAULT_NEO4J_PASSWORD)
     neo4j_worker_label: str | None = Field(default=DEFAULT_NEO4J_WORKER_LABEL)
 
-
     # Redis connection
     redis_host: str = Field(default=DEFAULT_REDIS_HOST)
     redis_port: int = Field(default=DEFAULT_REDIS_PORT)
@@ -425,13 +424,10 @@ def validate_settings(settings: HintGridSettings) -> None:
         errors.append(f"redis_db must be 0-15, got {settings.redis_db}")
     if settings.redis_namespace is not None and (
         not settings.redis_namespace
-        or not all(
-            ch.isalnum() or ch in (":", "-", "_") for ch in settings.redis_namespace
-        )
+        or not all(ch.isalnum() or ch in (":", "-", "_") for ch in settings.redis_namespace)
     ):
         errors.append(
-            "redis_namespace must be alphanumeric or ':', '-', '_', "
-            f"got {settings.redis_namespace}"
+            f"redis_namespace must be alphanumeric or ':', '-', '_', got {settings.redis_namespace}"
         )
 
     # === Embedding settings ===
@@ -599,7 +595,13 @@ def validate_settings(settings: HintGridSettings) -> None:
         errors.append(f"prune_days must be >= 1, got {settings.prune_days}")
 
     # Weights (should be non-negative)
-    weight_fields = ("likes_weight", "reblogs_weight", "replies_weight", "follows_weight", "mentions_weight")
+    weight_fields = (
+        "likes_weight",
+        "reblogs_weight",
+        "replies_weight",
+        "follows_weight",
+        "mentions_weight",
+    )
     for weight_name in weight_fields:
         value = getattr(settings, weight_name)
         if value < 0:
