@@ -569,6 +569,7 @@ class HintGridApp:
                     active_days,
                     self.settings.feed_size,
                     rel_types=rel_types,
+                    noise_community_id=self.settings.noise_community_id,
                 )
                 if uid > resume_from
             ]

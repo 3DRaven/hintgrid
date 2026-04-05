@@ -346,6 +346,8 @@ class Neo4jClient(AbstractContextManager["Neo4jClient"]):
         active_days: int,
         feed_size: int,
         rel_types: frozenset[str] | None = None,
+        *,
+        noise_community_id: int = -1,
     ) -> Iterator[int]:
         """Stream user IDs of local users that need feed regeneration.
 
@@ -377,13 +379,15 @@ class Neo4jClient(AbstractContextManager["Neo4jClient"]):
             "AND ( "
             "  u.feedGeneratedAt IS NULL "
             "  OR EXISTS { "
-            "    MATCH (u)-[:BELONGS_TO]->(:__uc__)-[:INTERESTED_IN]->(pc:__pc__) "
+            "    MATCH (u)-[:BELONGS_TO]->(uc:__uc__)-[:INTERESTED_IN]->(pc:__pc__) "
             "          <-[:BELONGS_TO]-(p:__post__) "
             "    WHERE p.createdAt > u.feedGeneratedAt "
+            "      AND uc.id <> $noise_community_id AND pc.id <> $noise_community_id "
             "  } "
             "  OR EXISTS { "
-            "    MATCH (u)-[:BELONGS_TO]->(uc:__uc__)-[i:INTERESTED_IN]->(:__pc__) "
+            "    MATCH (u)-[:BELONGS_TO]->(uc:__uc__)-[i:INTERESTED_IN]->(pc:__pc__) "
             "    WHERE i.last_updated > u.feedGeneratedAt "
+            "      AND uc.id <> $noise_community_id AND pc.id <> $noise_community_id "
             "  } "
         )
         if rel_types is None or "WAS_RECOMMENDED" in rel_types:
@@ -399,6 +403,7 @@ class Neo4jClient(AbstractContextManager["Neo4jClient"]):
             {
                 "active_days": active_days,
                 "consumption_threshold": consumption_threshold,
+                "noise_community_id": noise_community_id,
             },
         ):
             value = row.get("id")

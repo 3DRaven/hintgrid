@@ -40,16 +40,25 @@ def compute_community_similarity(
             {"graph_name": similarity_graph_name},
         )
 
-    project_labels = [neo4j.worker_label] if neo4j.worker_label else ["User", "UserCommunity"]
-
     validate_gds_name(similarity_graph_name)
-    neo4j.execute_labeled(
-        "CALL gds.graph.project("
-        "  '__graph_name__', $node_labels, "
-        "  {BELONGS_TO: {orientation: 'UNDIRECTED'}}"
-        ")",
-        ident_map={"graph_name": similarity_graph_name},
-        params={"node_labels": project_labels},
+    user_lab = neo4j.label("User")
+    uc_lab = neo4j.label("UserCommunity")
+    noise = settings.noise_community_id
+    node_query = (
+        f"MATCH (u:{user_lab}) RETURN id(u) AS id "
+        f"UNION MATCH (uc:{uc_lab}) WHERE uc.id <> {noise} RETURN id(uc) AS id"
+    )
+    rel_query = (
+        f"MATCH (u:{user_lab})-[:BELONGS_TO]->(uc:{uc_lab}) WHERE uc.id <> {noise} "
+        f"RETURN id(u) AS source, id(uc) AS target"
+    )
+    neo4j.execute(
+        "CALL gds.graph.project.cypher($graph_name, $node_query, $rel_query)",
+        {
+            "graph_name": similarity_graph_name,
+            "node_query": node_query,
+            "rel_query": rel_query,
+        },
     )
 
     result = neo4j.execute_and_fetch_labeled(

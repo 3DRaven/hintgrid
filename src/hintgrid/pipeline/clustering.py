@@ -20,6 +20,10 @@ from hintgrid.pipeline.community_structure import (
     create_post_community_structure,
     create_user_community_structure,
 )
+from hintgrid.pipeline.singleton_cluster_collapse import (
+    collapse_singleton_post_clusters,
+    collapse_singleton_user_clusters,
+)
 from hintgrid.pipeline.leiden_diagnostics import (
     collect_post_similarity_graph_stats,
     collect_user_interaction_graph_stats,
@@ -288,6 +292,7 @@ def run_user_clustering(
 
     # Step 3: Create community structure
     print_step(3, USER_CLUSTERING_STEPS, "Creating community structure...")
+    collapse_singleton_user_clusters(neo4j, settings, progress)
     create_user_community_structure(neo4j, settings, progress)
 
     # Step 4: Update community sizes
@@ -426,6 +431,7 @@ def run_post_clustering(
 
     # Step 3: Create community structure
     print_step(3, POST_CLUSTERING_STEPS, "Creating community structure...")
+    collapse_singleton_post_clusters(neo4j, settings, progress)
     create_post_community_structure(neo4j, settings, progress)
 
     # Step 4: Update community sizes

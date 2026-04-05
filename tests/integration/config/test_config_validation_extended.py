@@ -210,6 +210,13 @@ class TestClusteringValidation:
             validate_settings(settings)
         assert "leiden_max_levels" in str(exc_info.value)
 
+    def test_invalid_noise_community_id_zero(self) -> None:
+        """noise_community_id 0 is reserved for empty-graph fallback; must raise."""
+        settings = HintGridSettings(noise_community_id=0)
+        with pytest.raises(ConfigurationError) as exc_info:
+            validate_settings(settings)
+        assert "noise_community_id" in str(exc_info.value)
+
     def test_invalid_knn_neighbors(self) -> None:
         """knn_neighbors < 1 should raise ConfigurationError."""
         settings = HintGridSettings(knn_neighbors=0)

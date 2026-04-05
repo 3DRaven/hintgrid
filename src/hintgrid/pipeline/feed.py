@@ -73,6 +73,7 @@ def generate_user_feed(
         "MATCH (u:__user__ {id: $user_id})-[:BELONGS_TO]->(uc:__uc__) "
         "      -[i:INTERESTED_IN]->(pc:__pc__)<-[:BELONGS_TO]-(p:__post__) "
         "WHERE p.createdAt > datetime() - duration({days: $feed_days}) "
+        "AND uc.id <> $noise_community_id AND pc.id <> $noise_community_id "
         + filters
         + "WITH u, p, i.score AS interest_score, "
         + popularity
@@ -101,6 +102,7 @@ def generate_user_feed(
                 "user_id": user_id,
                 "feed_days": settings.feed_days,
                 "feed_size": settings.feed_size,
+                "noise_community_id": settings.noise_community_id,
                 "interest_weight": settings.personalized_interest_weight,
                 "popularity_weight": settings.personalized_popularity_weight,
                 "recency_weight": settings.personalized_recency_weight,
@@ -264,7 +266,10 @@ def generate_public_feed(
             "MATCH (uc:__uc__)-[i:INTERESTED_IN]->(pc:__pc__)<-[:BELONGS_TO]-(p:__post__) "
         )
 
-    where_clause: LiteralString = "WHERE p.createdAt > datetime() - duration({days: $feed_days}) "
+    where_clause: LiteralString = (
+        "WHERE p.createdAt > datetime() - duration({days: $feed_days}) "
+        "AND uc.id <> $noise_community_id AND pc.id <> $noise_community_id "
+    )
     if local_only_authors:
         where_clause = (
             where_clause + "  AND EXISTS { MATCH (p)<-[:WROTE]-(author:__user__ {isLocal: true}) } "
@@ -316,6 +321,7 @@ def generate_public_feed(
             {
                 "feed_days": settings.feed_days,
                 "public_feed_size": settings.public_feed_size,
+                "noise_community_id": settings.noise_community_id,
                 "interest_weight": settings.personalized_interest_weight,
                 "popularity_weight": settings.personalized_popularity_weight,
                 "recency_weight": settings.personalized_recency_weight,

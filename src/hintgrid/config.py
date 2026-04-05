@@ -86,6 +86,8 @@ DEFAULT_PRUNE_SIMILARITY_THRESHOLD = 0.9
 DEFAULT_PRUNE_DAYS = 30
 DEFAULT_LEIDEN_MAX_LEVELS = 10
 DEFAULT_LEIDEN_DIAGNOSTICS_ENABLED = False
+DEFAULT_SINGLETON_COLLAPSE_ENABLED = True
+DEFAULT_NOISE_COMMUNITY_ID = -1
 DEFAULT_SIMILARITY_RECENCY_DAYS = 7
 DEFAULT_KNN_SELF_NEIGHBOR_OFFSET = 1
 DEFAULT_EXPORT_MAX_ITEMS = 50
@@ -311,6 +313,8 @@ class HintGridSettings(BaseSettings):
     prune_days: int = Field(default=DEFAULT_PRUNE_DAYS)
     leiden_max_levels: int = Field(default=DEFAULT_LEIDEN_MAX_LEVELS)
     leiden_diagnostics: bool = Field(default=DEFAULT_LEIDEN_DIAGNOSTICS_ENABLED)
+    singleton_collapse_enabled: bool = Field(default=DEFAULT_SINGLETON_COLLAPSE_ENABLED)
+    noise_community_id: int = Field(default=DEFAULT_NOISE_COMMUNITY_ID)
     similarity_recency_days: int = Field(default=DEFAULT_SIMILARITY_RECENCY_DAYS)
     knn_self_neighbor_offset: int = Field(default=DEFAULT_KNN_SELF_NEIGHBOR_OFFSET)
 
@@ -529,6 +533,12 @@ def validate_settings(settings: HintGridSettings) -> None:
         errors.append(f"leiden_resolution must be > 0, got {settings.leiden_resolution}")
     if settings.leiden_max_levels < 1:
         errors.append(f"leiden_max_levels must be >= 1, got {settings.leiden_max_levels}")
+    if settings.noise_community_id == 0:
+        errors.append(
+            "noise_community_id must not be 0 (reserved for single-cluster fallback "
+            "when the interaction/similarity graph has no edges); "
+            f"got {settings.noise_community_id}"
+        )
     if settings.knn_neighbors < 1:
         errors.append(f"knn_neighbors must be >= 1, got {settings.knn_neighbors}")
     if settings.knn_self_neighbor_offset < 0:

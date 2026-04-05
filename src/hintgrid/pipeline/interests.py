@@ -183,7 +183,9 @@ def seed_serendipity(
         neo4j.execute_labeled(
             "MATCH (uc1:__uc__)-[sim:SIMILAR_COMMUNITY]->(uc2:__uc__) "
             "MATCH (uc2)-[i:INTERESTED_IN]->(pc:__pc__) "
-            "WHERE NOT (uc1)-[:INTERESTED_IN]->(pc) "
+            "WHERE uc1.id <> $noise_community_id AND uc2.id <> $noise_community_id "
+            "  AND pc.id <> $noise_community_id "
+            "  AND NOT (uc1)-[:INTERESTED_IN]->(pc) "
             "WITH uc1, pc, sim.score * i.score AS combined_score "
             "ORDER BY combined_score DESC "
             "LIMIT $serendipity_limit "
@@ -199,12 +201,14 @@ def seed_serendipity(
                 "serendipity_limit": settings.serendipity_limit,
                 "serendipity_score": settings.serendipity_score,
                 "serendipity_based_on": settings.serendipity_based_on,
+                "noise_community_id": settings.noise_community_id,
             },
         )
     else:
         neo4j.execute_labeled(
             "MATCH (uc:__uc__), (pc:__pc__) "
-            "WHERE NOT (uc)-[:INTERESTED_IN]->(pc) AND rand() < $probability "
+            "WHERE uc.id <> $noise_community_id AND pc.id <> $noise_community_id "
+            "  AND NOT (uc)-[:INTERESTED_IN]->(pc) AND rand() < $probability "
             "MATCH (uc)-[:INTERESTED_IN]->(pc2:__pc__) "
             "WITH uc, pc LIMIT $serendipity_limit "
             "MERGE (uc)-[i:INTERESTED_IN]->(pc) "
@@ -220,6 +224,7 @@ def seed_serendipity(
                 "serendipity_limit": settings.serendipity_limit,
                 "serendipity_score": settings.serendipity_score,
                 "serendipity_based_on": settings.serendipity_based_on,
+                "noise_community_id": settings.noise_community_id,
             },
         )
 
@@ -271,7 +276,10 @@ def refresh_interests(
         neo4j.execute_and_fetch_labeled(
             dirty_query,
             {"user": "User", "uc": "UserCommunity"},
-            {"last_rebuild_at": last_rebuild_at},
+            {
+                "last_rebuild_at": last_rebuild_at,
+                "noise_community_id": settings.noise_community_id,
+            },
         )
     )
 

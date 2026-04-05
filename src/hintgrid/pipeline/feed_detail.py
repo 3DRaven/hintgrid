@@ -53,6 +53,7 @@ def get_detailed_recommendations(
         "MATCH (u:__user__ {id: $user_id})-[:BELONGS_TO]->(uc:__uc__) "
         "      -[i:INTERESTED_IN]->(pc:__pc__)<-[:BELONGS_TO]-(p:__post__) "
         "WHERE p.createdAt > datetime() - duration({days: $feed_days}) "
+        "AND uc.id <> $noise_community_id AND pc.id <> $noise_community_id "
         + filters
         + "WITH u, p, i.score AS interest_score, "
         + popularity_expr
@@ -96,6 +97,7 @@ def get_detailed_recommendations(
                 "user_id": user_id,
                 "feed_days": settings.feed_days,
                 "feed_size": settings.feed_size,
+                "noise_community_id": settings.noise_community_id,
                 "interest_weight": settings.personalized_interest_weight,
                 "popularity_weight": settings.personalized_popularity_weight,
                 "recency_weight": settings.personalized_recency_weight,

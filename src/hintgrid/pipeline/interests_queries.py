@@ -34,13 +34,14 @@ _RETURN_ITERATE: LiteralString = "RETURN uc.id AS uc_id, pc.id AS pc_id, weight,
 _RETURN_COUNT: LiteralString = "RETURN count(*) AS total"
 
 _INTEREST_MATCH_CORE: LiteralString = (
-    "MATCH (u)-[:BELONGS_TO]->(uc:__uc__), (p)-[:BELONGS_TO]->(pc:__pc__)"
+    "MATCH (u)-[:BELONGS_TO]->(uc:__uc__), (p)-[:BELONGS_TO]->(pc:__pc__) "
+    "WHERE uc.id <> $noise_community_id AND pc.id <> $noise_community_id"
 )
 
 
 def _dirty_suffix(has_dirty_filter: bool) -> LiteralString:
     if has_dirty_filter:
-        return " WHERE uc.id IN $dirty_uc_ids "
+        return " AND uc.id IN $dirty_uc_ids "
     return ""
 
 
@@ -277,6 +278,7 @@ def build_interest_params(
         "reblogs_weight": settings.reblogs_weight,
         "replies_weight": settings.replies_weight,
         "bookmark_weight": settings.bookmark_weight,
+        "noise_community_id": settings.noise_community_id,
     }
     if settings.ctr_enabled:
         params.update(
@@ -324,7 +326,10 @@ def build_dirty_uc_query(
     Only includes EXISTS clauses for relationship types that actually
     exist in the graph.
     """
-    header: LiteralString = "MATCH (u:__user__)-[:BELONGS_TO]->(uc:__uc__) WHERE "
+    header: LiteralString = (
+        "MATCH (u:__user__)-[:BELONGS_TO]->(uc:__uc__) "
+        "WHERE uc.id <> $noise_community_id AND ("
+    )
 
     clauses: list[LiteralString] = []
     _rel_exists: list[tuple[str, LiteralString]] = [
@@ -356,4 +361,4 @@ def build_dirty_uc_query(
     for clause in clauses[1:]:
         joined = joined + " OR " + clause
 
-    return header + joined + " RETURN DISTINCT uc.id AS uc_id"
+    return header + joined + ") RETURN DISTINCT uc.id AS uc_id"
