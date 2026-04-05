@@ -9,8 +9,9 @@ from typing import TYPE_CHECKING, LiteralString, cast
 
 if TYPE_CHECKING:
     from hintgrid.clients.neo4j import Neo4jClient, Neo4jParameter
+    from hintgrid.cli.progress_display import HintGridProgress
     from hintgrid.config import HintGridSettings
-    from rich.progress import Progress, TaskID
+    from rich.progress import TaskID
 
 from hintgrid.pipeline import community_similarity as _community_similarity_module
 from hintgrid.pipeline.interests_queries import (
@@ -33,7 +34,7 @@ compute_community_similarity = _community_similarity_module.compute_community_si
 def rebuild_interests(
     neo4j: Neo4jClient,
     settings: HintGridSettings,
-    progress: Progress | None = None,
+    progress: HintGridProgress | None = None,
 ) -> None:
     """Rebuild INTERESTED_IN relationships between communities based on interactions."""
     logger.info("Rebuilding INTERESTED_IN relationships")
@@ -228,7 +229,7 @@ def refresh_interests(
     neo4j: Neo4jClient,
     settings: HintGridSettings,
     last_rebuild_at: str,
-    progress: Progress | None = None,
+    progress: HintGridProgress | None = None,
 ) -> None:
     """Incremental refresh: apply global decay and recompute dirty communities.
 

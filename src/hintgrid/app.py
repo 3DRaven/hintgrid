@@ -46,11 +46,10 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from hintgrid.cli.console import PipelineMetrics
+    from hintgrid.cli.progress_display import HintGridProgress
     from hintgrid.clients import Neo4jClient, PostgresClient, RedisClient
     from hintgrid.cli.shutdown import ShutdownManager
     from hintgrid.pipeline.stats import UserInfo
-    from rich.progress import Progress
-
 logger = get_logger(__name__)
 
 
@@ -118,7 +117,7 @@ class HintGridApp:
         from hintgrid.pipeline.clustering import run_pagerank, run_similarity_pruning
         from hintgrid.pipeline.interests import compute_community_similarity
 
-        _steps: list[tuple[str, str, Callable[[Progress | None], None]]] = [
+        _steps: list[tuple[str, str, Callable[[HintGridProgress | None], None]]] = [
             (
                 "user_clustering",
                 "User clustering",
@@ -160,7 +159,7 @@ class HintGridApp:
             ),
         ]
 
-        with create_pipeline_progress() as progress:
+        with create_pipeline_progress(self.settings) as progress:
             main_task = progress.add_task("[cyan]Running analytics...", total=len(_steps))
 
             for step_name, step_description, step_fn in _steps:
@@ -174,7 +173,7 @@ class HintGridApp:
                 if shutdown:
                     shutdown.complete_step(step_name)
 
-    def _rebuild_interests_and_record(self, progress: Progress | None = None) -> None:
+    def _rebuild_interests_and_record(self, progress: HintGridProgress | None = None) -> None:
         """Rebuild interests and record the timestamp in pipeline state."""
         from datetime import datetime
 
@@ -535,17 +534,7 @@ class HintGridApp:
 
         Checks shutdown flag between users for graceful Ctrl+C handling.
         """
-        from rich.progress import (
-            BarColumn,
-            MofNCompleteColumn,
-            Progress,
-            SpinnerColumn,
-            TaskProgressColumn,
-            TextColumn,
-            TimeElapsedColumn,
-        )
-
-        from hintgrid.cli.console import console
+        from hintgrid.cli.console import create_feed_generation_progress
 
         if shutdown:
             shutdown.begin_step("feed_generation")
@@ -591,15 +580,7 @@ class HintGridApp:
         users_processed = 0
         checkpoint_interval = self.settings.checkpoint_interval
 
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            BarColumn(),
-            MofNCompleteColumn(),
-            TaskProgressColumn(),
-            TimeElapsedColumn(),
-            console=console,
-        ) as progress:
+        with create_feed_generation_progress(self.settings) as progress:
             workers_label = f" ({feed_workers} workers)" if feed_workers > 1 else ""
             mode_label = "force" if self.settings.feed_force_refresh else "selective"
             task = progress.add_task(

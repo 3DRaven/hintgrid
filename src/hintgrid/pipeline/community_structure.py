@@ -8,8 +8,8 @@ from typing import TYPE_CHECKING, Literal, LiteralString
 
 if TYPE_CHECKING:
     from hintgrid.clients.neo4j import Neo4jClient, Neo4jParameter
+    from hintgrid.cli.progress_display import HintGridProgress
     from hintgrid.config import HintGridSettings
-    from rich.progress import Progress
 
 from hintgrid.cli.console import console
 from hintgrid.utils.coercion import coerce_int
@@ -67,7 +67,7 @@ def _run_periodic_community_structure(
     label_map: dict[str, str],
     merge_labels_param: Literal["uc_labels", "pc_labels"],
     community_base_label: Literal["UserCommunity", "PostCommunity"],
-    progress: Progress | None,
+    progress: HintGridProgress | None,
     console_status: str,
     progress_task_title: str,
     done_task_description: str,
@@ -146,7 +146,7 @@ def _run_periodic_community_structure(
 def create_user_community_structure(
     neo4j: Neo4jClient,
     settings: HintGridSettings,
-    progress: Progress | None = None,
+    progress: HintGridProgress | None = None,
 ) -> None:
     """Create UserCommunity nodes and BELONGS_TO from User.cluster_id (batched)."""
     _run_periodic_community_structure(
@@ -170,7 +170,7 @@ def create_user_community_structure(
 def create_post_community_structure(
     neo4j: Neo4jClient,
     settings: HintGridSettings,
-    progress: Progress | None = None,
+    progress: HintGridProgress | None = None,
 ) -> None:
     """Create PostCommunity nodes and BELONGS_TO from Post.cluster_id (batched)."""
     _run_periodic_community_structure(

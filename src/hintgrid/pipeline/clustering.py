@@ -9,8 +9,10 @@ from typing import TYPE_CHECKING, LiteralString
 
 if TYPE_CHECKING:
     from hintgrid.clients.neo4j import Neo4jClient, Neo4jValue
+    from hintgrid.cli.progress_display import HintGridProgress
     from hintgrid.state import StateStore
-    from rich.progress import Progress, TaskID
+
+    from rich.progress import TaskID
 
 from hintgrid.cli.console import console, print_step, print_success
 from hintgrid.config import HintGridSettings
@@ -147,7 +149,7 @@ validate_gds_name(POST_EMBEDDING_INDEX_BASE_NAME)
 def run_user_clustering(
     neo4j: Neo4jClient,
     settings: HintGridSettings,
-    progress: Progress | None = None,
+    progress: HintGridProgress | None = None,
 ) -> None:
     """Run Leiden clustering on User nodes via INTERACTS_WITH relationships.
 
@@ -291,7 +293,7 @@ def run_post_clustering(
     neo4j: Neo4jClient,
     settings: HintGridSettings,
     state_store: StateStore,
-    progress: Progress | None = None,
+    progress: HintGridProgress | None = None,
 ) -> None:
     """Run Vector Index similarity + Leiden clustering on Post nodes."""
     logger.info("  Running post clustering (Vector Index + Leiden)...")
@@ -587,7 +589,7 @@ def _build_similarity_graph_vector_index(
     neo4j: Neo4jClient,
     settings: HintGridSettings,
     state_store: StateStore,
-    progress: Progress | None = None,
+    progress: HintGridProgress | None = None,
 ) -> None:
     """Build SIMILAR_TO graph using Neo4j Vector Index with apoc.periodic.iterate.
 
@@ -747,7 +749,7 @@ def _build_similarity_graph_vector_index(
             action_query,
             label_map={"post": "Post"},
             ident_map=ident_map,
-            batch_size=settings.apoc_batch_size,
+            batch_size=settings.similarity_iterate_batch_size,
             parallel=False,  # Avoid locking on MERGE
             batch_mode="BATCH",  # Use batch mode for better performance
             progress_tracker_id=operation_id if progress is not None else None,

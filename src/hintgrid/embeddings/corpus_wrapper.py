@@ -15,7 +15,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from rich.progress import Progress, TaskID
+    from hintgrid.cli.progress_display import HintGridProgress
+    from rich.progress import TaskID
 
     from hintgrid.clients.postgres import PostgresCorpus
     from hintgrid.embeddings.text_pipeline import TextPipeline
@@ -41,7 +42,7 @@ class CachedPhrasedCorpus:
         self,
         cache_path: Path,
         pipeline: TextPipeline,
-        progress: Progress | None = None,
+        progress: HintGridProgress | None = None,
         task: TaskID | None = None,
         total_epochs: int = 1,
         min_count: int = 1,
@@ -121,7 +122,7 @@ class PhrasedCorpusWrapper:
         self,
         corpus: PostgresCorpus,
         pipeline: TextPipeline,
-        progress: Progress | None = None,
+        progress: HintGridProgress | None = None,
         task: TaskID | None = None,
         total_epochs: int = 1,
         min_count: int = 1,

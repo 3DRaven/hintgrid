@@ -11,9 +11,10 @@ if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
     from hintgrid.clients.neo4j import Neo4jClient, Neo4jParameter, Neo4jValue
+    from hintgrid.cli.progress_display import HintGridProgress
     from hintgrid.embeddings.provider import EmbeddingProvider
     from hintgrid.state import PipelineState, StateStore
-    from rich.progress import Progress, TaskID
+    from rich.progress import TaskID
 
 from hintgrid.cli.console import create_batch_progress
 from hintgrid.config import HintGridSettings, build_embedding_signature
@@ -1145,7 +1146,7 @@ def reembed_existing_posts(
     total = 0
     batch: list[tuple[int, str]] = []
 
-    with create_batch_progress(total_posts) as progress:
+    with create_batch_progress(total_posts, settings=settings) as progress:
         task = progress.add_task("[cyan]Reembedding posts...[/cyan]", total=total_posts)
 
         # Stream all posts using server-side cursor - O(N) complexity
@@ -1357,7 +1358,7 @@ def update_user_activity(
 def cleanup_inactive_users(
     neo4j: Neo4jClient,
     settings: HintGridSettings,
-    progress: Progress | None = None,
+    progress: HintGridProgress | None = None,
 ) -> int:
     """Cascade-delete inactive users and their posts from the graph.
 

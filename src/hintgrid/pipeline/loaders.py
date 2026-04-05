@@ -266,7 +266,7 @@ def load_incremental_data(
 
     loader_workers = settings.loader_workers
 
-    with LoadingProgress() as progress:
+    with LoadingProgress(settings) as progress:
         # Phase 1: Statuses always run first (needs embedding, creates Post nodes)
         state = _load_statuses(
             postgres,

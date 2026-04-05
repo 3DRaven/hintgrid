@@ -27,7 +27,8 @@ from gensim.models.phrases import Phraser, Phrases
 from nltk.tokenize import TweetTokenizer
 
 if TYPE_CHECKING:
-    from rich.progress import Progress, TaskID
+    from hintgrid.cli.progress_display import HintGridProgress
+    from rich.progress import TaskID
 
     from hintgrid.clients.neo4j import Neo4jClient
     from hintgrid.clients.postgres import PostgresClient
@@ -537,7 +538,7 @@ class FastTextEmbeddingService:
 
         vocab_total = doc_count or None
 
-        with create_batch_progress(vocab_total) as progress:
+        with create_batch_progress(vocab_total, settings=self._settings) as progress:
             task = progress.add_task(
                 "[cyan]Building vocabulary[/cyan]", total=vocab_total
             )
@@ -634,7 +635,7 @@ class FastTextEmbeddingService:
 
         train_total = corpus_count * epochs if corpus_count else None
 
-        with create_batch_progress(train_total) as progress:
+        with create_batch_progress(train_total, settings=self._settings) as progress:
             task = progress.add_task(
                 f"[cyan]Training epoch 1/{epochs}[/cyan]",
                 total=train_total,
@@ -1011,7 +1012,7 @@ class _PhrasedCorpusWrapper:
         self,
         corpus: PostgresCorpus,
         pipeline: TextPipeline,
-        progress: Progress | None = None,
+        progress: HintGridProgress | None = None,
         task: TaskID | None = None,
         total_epochs: int = 1,
         min_count: int = 1,

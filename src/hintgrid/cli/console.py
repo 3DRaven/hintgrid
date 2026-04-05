@@ -3,39 +3,34 @@
 from __future__ import annotations
 
 import logging
-import threading
-import time
-from datetime import datetime
 from typing import TYPE_CHECKING, Self, TypedDict
-from collections.abc import Sequence
 
 from rich.console import Console
 from rich.panel import Panel
-from rich.progress import (
-    BarColumn,
-    MofNCompleteColumn,
-    Progress,
-    SpinnerColumn,
-    TaskID,
-    TaskProgressColumn,
-    TextColumn,
-    TimeElapsedColumn,
-    TimeRemainingColumn,
-)
 from rich.table import Table
 
 from hintgrid.utils.coercion import coerce_float, coerce_int, coerce_str
+
+import hintgrid.cli.progress_display as _progress_display
+
+create_batch_progress = _progress_display.create_batch_progress
+create_data_loading_progress = _progress_display.create_data_loading_progress
+create_feed_generation_progress = _progress_display.create_feed_generation_progress
+create_pipeline_progress = _progress_display.create_pipeline_progress
+track_periodic_iterate_progress = _progress_display.track_periodic_iterate_progress
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
     from contextlib import AbstractContextManager
 
     from hintgrid.cli.shutdown import PipelineStep
-    from hintgrid.clients.neo4j import Neo4jClient, Neo4jValue
+    from hintgrid.clients.neo4j import Neo4jValue
     from hintgrid.config import HintGridSettings
     from hintgrid.pipeline.feed import RecommendationDetail
     from hintgrid.pipeline.stats import UserInfo
     from hintgrid.state import PipelineState
+
+    from rich.progress import TaskID
 
 logger = logging.getLogger(__name__)
 
@@ -64,63 +59,6 @@ console = Console()
 error_console = Console(stderr=True)
 
 
-def create_pipeline_progress() -> Progress:
-    """Create a progress bar for pipeline stages."""
-    return Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        TaskProgressColumn(),
-        TimeElapsedColumn(),
-        console=console,
-    )
-
-
-def create_data_loading_progress() -> Progress:
-    """Create a progress bar for data loading operations.
-
-    Shows spinner, description, items processed, and elapsed time.
-    Designed for streaming/incremental operations where total is unknown.
-    """
-    return Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        TextColumn("[cyan]{task.completed:,}[/cyan] items"),
-        TimeElapsedColumn(),
-        console=console,
-        transient=True,
-    )
-
-
-def create_batch_progress(total: int | None = None) -> Progress:
-    """Create a progress bar for batch operations with known or unknown total.
-
-    Args:
-        total: Total items if known, None for indeterminate progress
-
-    Returns:
-        Progress instance configured for batch processing
-    """
-    if total is not None:
-        return Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            BarColumn(),
-            MofNCompleteColumn(),
-            TaskProgressColumn(),
-            TimeRemainingColumn(),
-            TimeElapsedColumn(),
-            console=console,
-        )
-    return Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        TextColumn("[cyan]{task.completed:,}[/cyan] items"),
-        TimeElapsedColumn(),
-        console=console,
-    )
-
-
 class LoadingProgress:
     """Context manager for data loading progress display.
 
@@ -128,8 +66,8 @@ class LoadingProgress:
     with support for multiple concurrent loading tasks.
     """
 
-    def __init__(self) -> None:
-        self._progress = create_data_loading_progress()
+    def __init__(self, settings: HintGridSettings | None = None) -> None:
+        self._progress = create_data_loading_progress(settings)
         self._tasks: dict[str, TaskID] = {}
 
     def __enter__(self) -> Self:
@@ -259,10 +197,7 @@ def print_database_stats(stats: dict[str, dict[str, object]]) -> None:
             max_id_str = "[dim]—[/dim]"
         else:
             max_id_int = coerce_int(max_id, 0)
-            if max_id_int >= 1000:
-                max_id_str = f"{max_id_int:,}"
-            else:
-                max_id_str = str(max_id_int)
+            max_id_str = f"{max_id_int:,}" if max_id_int >= 1000 else str(max_id_int)
 
         # Format max_date - check for datetime using hasattr instead of isinstance
         if max_date is None:
@@ -403,6 +338,7 @@ _SETTINGS_GROUPS: list[tuple[str, str, list[str]]] = [
             "knn_self_neighbor_offset",
             "similarity_threshold",
             "similarity_recency_days",
+            "similarity_iterate_batch_size",
         ],
     ),
     (
@@ -492,7 +428,7 @@ _SETTINGS_GROUPS: list[tuple[str, str, list[str]]] = [
         ],
     ),
     ("🐘 Mastodon", "green", ["mastodon_public_visibility", "mastodon_account_lookup_limit"]),
-    ("📋 Logging", "dim", ["log_level", "log_file"]),
+    ("📋 Logging", "dim", ["log_level", "log_file", "progress_output"]),
 ]
 
 
@@ -1157,76 +1093,6 @@ def print_shutdown_summary(
     console.print()
 
 
-def track_periodic_iterate_progress(
-    neo4j: Neo4jClient,
-    operation_id: str,
-    progress: Progress,
-    task_id: TaskID,
-    poll_interval: float = 0.5,
-) -> threading.Thread:
-    """Start background polling thread to track progress of apoc.periodic.iterate operation.
-
-    Args:
-        neo4j: Neo4j client instance
-        operation_id: Unique identifier for the operation (matches ProgressTracker.id)
-        progress: Rich Progress instance to update
-        task_id: Task ID in the progress bar to update
-        poll_interval: Polling interval in seconds (default 0.5)
-
-    Returns:
-        Thread object that can be stopped by setting stop_event
-    """
-    stop_event = threading.Event()
-
-    def poll_progress() -> None:
-        last_processed = 0
-        while not stop_event.is_set():
-            try:
-                progress_data = neo4j.get_progress(operation_id)
-                if not progress_data:
-                    # ProgressTracker not found yet, wait a bit
-                    time.sleep(poll_interval)
-                    continue
-
-                processed_raw = progress_data.get("processed", 0)
-                total_raw = progress_data.get("total")
-                batches_raw = progress_data.get("batches", 0)
-
-                # Coerce Neo4jValue to int/float for progress
-                processed = coerce_int(processed_raw, 0)
-                total = coerce_int(total_raw) if total_raw is not None else None
-                batches = coerce_int(batches_raw, 0)
-
-                # Update progress bar
-                if total is not None:
-                    progress.update(task_id, completed=float(processed), total=float(total))
-                    progress.update(
-                        task_id,
-                        description=f"Processed {processed:,} / {total:,} items ({batches} batches)",
-                    )
-                else:
-                    # Indeterminate progress
-                    if processed > last_processed:
-                        progress.update(task_id, advance=float(processed - last_processed))
-                    progress.update(
-                        task_id,
-                        description=f"Processed {processed:,} items ({batches} batches)",
-                    )
-
-                last_processed = processed
-
-            except Exception as exc:
-                logger.debug("Error polling progress: %s", exc, exc_info=True)
-            finally:
-                time.sleep(poll_interval)
-
-    thread = threading.Thread(target=poll_progress, daemon=True)
-    thread.start()
-    # Store stop_event in thread for later access
-    thread.stop_event = stop_event
-    return thread
-
-
 def print_similarity_diagnostics(
     diagnostics: dict[str, Neo4jValue],
     settings: HintGridSettings,
@@ -1255,9 +1121,9 @@ def print_similarity_diagnostics(
         if index_state == "ONLINE":
             status_text = f"{status_icon} ONLINE"
         elif index_state == "POPULATING":
-            status_text = f"[yellow]⚠ POPULATING[/yellow]"
+            status_text = "[yellow]⚠ POPULATING[/yellow]"
         elif index_state == "FAILED":
-            status_text = f"[red]✗ FAILED[/red]"
+            status_text = "[red]✗ FAILED[/red]"
         else:
             status_text = f"[yellow]⚠ {index_state or 'UNKNOWN'}[/yellow]"
     else:
@@ -1418,10 +1284,7 @@ def print_similarity_results(
     posts_without_edges = coerce_int(similarity_stats.get("posts_without_edges", 0))
     avg_edges_per_post = coerce_float(similarity_stats.get("avg_edges_per_post", 0.0))
 
-    if total_rels == 0:
-        rel_icon = "[yellow]⚠[/yellow]"
-    else:
-        rel_icon = "[green]✓[/green]"
+    rel_icon = "[yellow]⚠[/yellow]" if total_rels == 0 else "[green]✓[/green]"
 
     lines.append(f"├── Total SIMILAR_TO:     {total_rels:,} {rel_icon}")
     lines.append(f"├── Posts with edges:     {posts_with_edges:,}")

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -104,7 +105,11 @@ DEFAULT_MASTODON_ACCOUNT_LOOKUP_LIMIT = 1
 DEFAULT_CHECKPOINT_INTERVAL = 1000
 DEFAULT_LOG_LEVEL = "INFO"
 DEFAULT_LOG_FILE = "hintgrid.log"
+DEFAULT_PROGRESS_OUTPUT: Literal["auto", "rich", "plain"] = "auto"
 DEFAULT_APOC_BATCH_SIZE = 10000
+# SIMILAR_TO build runs vector index queries per post; large batches exceed Neo4j
+# transaction memory (dbms.memory.transaction.total.max) on typical instances.
+DEFAULT_SIMILARITY_ITERATE_BATCH_SIZE = 2000
 DEFAULT_PAGERANK_ENABLED = True
 DEFAULT_PAGERANK_WEIGHT = 0.1
 DEFAULT_PAGERANK_DAMPING_FACTOR = 0.85
@@ -225,6 +230,9 @@ class HintGridSettings(BaseSettings):
     load_since: str | None = Field(default=DEFAULT_LOAD_SINCE)
     max_retries: int = Field(default=DEFAULT_MAX_RETRIES)
     apoc_batch_size: int = Field(default=DEFAULT_APOC_BATCH_SIZE)
+    similarity_iterate_batch_size: int = Field(
+        default=DEFAULT_SIMILARITY_ITERATE_BATCH_SIZE,
+    )
 
     # Communities and clustering
     user_communities: str = Field(default=DEFAULT_USER_COMMUNITIES)
@@ -331,6 +339,8 @@ class HintGridSettings(BaseSettings):
     # Logging
     log_level: str = Field(default=DEFAULT_LOG_LEVEL)
     log_file: str = Field(default=DEFAULT_LOG_FILE)
+    # CLI progress: auto uses TTY detection (plain when not a terminal, e.g. systemd/journald)
+    progress_output: Literal["auto", "rich", "plain"] = Field(default=DEFAULT_PROGRESS_OUTPUT)
 
 
 @dataclass(frozen=True)
@@ -353,6 +363,7 @@ VALID_FEED_TTL_VALUES = ("none", "1h", "6h", "12h", "24h", "48h", "7d")
 VALID_COLD_START_FALLBACKS = ("global_top", "recent", "random")
 VALID_SIMILARITY_PRUNING = ("none", "aggressive", "partial", "temporal")
 VALID_LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
+VALID_PROGRESS_OUTPUT = ("auto", "rich", "plain")
 
 
 def validate_settings(settings: HintGridSettings) -> None:
@@ -412,14 +423,16 @@ def validate_settings(settings: HintGridSettings) -> None:
         errors.append(f"redis_port must be 1-65535, got {settings.redis_port}")
     if settings.redis_db < 0 or settings.redis_db > 15:
         errors.append(f"redis_db must be 0-15, got {settings.redis_db}")
-    if settings.redis_namespace is not None:
-        if not settings.redis_namespace or not all(
+    if settings.redis_namespace is not None and (
+        not settings.redis_namespace
+        or not all(
             ch.isalnum() or ch in (":", "-", "_") for ch in settings.redis_namespace
-        ):
-            errors.append(
-                "redis_namespace must be alphanumeric or ':', '-', '_', "
-                f"got {settings.redis_namespace}"
-            )
+        )
+    ):
+        errors.append(
+            "redis_namespace must be alphanumeric or ':', '-', '_', "
+            f"got {settings.redis_namespace}"
+        )
 
     # === Embedding settings ===
 
@@ -500,6 +513,16 @@ def validate_settings(settings: HintGridSettings) -> None:
         errors.append(f"apoc_batch_size must be >= 1, got {settings.apoc_batch_size}")
     if settings.apoc_batch_size > 100_000:
         errors.append(f"apoc_batch_size too large: {settings.apoc_batch_size} (max 100000)")
+    if settings.similarity_iterate_batch_size < 1:
+        errors.append(
+            f"similarity_iterate_batch_size must be >= 1, "
+            f"got {settings.similarity_iterate_batch_size}"
+        )
+    if settings.similarity_iterate_batch_size > 100_000:
+        errors.append(
+            f"similarity_iterate_batch_size too large: {settings.similarity_iterate_batch_size} "
+            f"(max 100000)"
+        )
 
     # Clustering
     if settings.leiden_resolution <= 0:
@@ -673,6 +696,11 @@ def validate_settings(settings: HintGridSettings) -> None:
     if settings.log_level.upper() not in VALID_LOG_LEVELS:
         errors.append(
             f"Invalid log_level: '{settings.log_level}'. Valid: {', '.join(VALID_LOG_LEVELS)}"
+        )
+    if settings.progress_output not in VALID_PROGRESS_OUTPUT:
+        errors.append(
+            f"Invalid progress_output: '{settings.progress_output}'. "
+            f"Valid: {', '.join(VALID_PROGRESS_OUTPUT)}"
         )
 
     # === Raise if errors ===

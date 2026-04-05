@@ -135,6 +135,13 @@ class TestValidateSettings:
             validate_settings(settings)
         assert "batch_size" in str(exc_info.value)
 
+    def test_invalid_similarity_iterate_batch_size(self) -> None:
+        """Zero similarity_iterate_batch_size should raise ConfigurationError."""
+        settings = HintGridSettings(similarity_iterate_batch_size=0)
+        with pytest.raises(ConfigurationError) as exc_info:
+            validate_settings(settings)
+        assert "similarity_iterate_batch_size" in str(exc_info.value)
+
     def test_invalid_leiden_resolution(self) -> None:
         """Zero or negative leiden_resolution should raise ConfigurationError."""
         settings = HintGridSettings(leiden_resolution=0)
