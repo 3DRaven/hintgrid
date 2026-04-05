@@ -228,6 +228,8 @@ sudo systemctl stop hintgrid-run.service
 
 Если из‑за записей HintGrid в Redis «зависла» или некорректно ведёт себя выдача лент, в норме нужно **удалить из ZSET только элементы‑рекомендации HintGrid**, сохранив нативные записи Mastodon (score совпадает с id поста; у HintGrid — ранговый score с множителем).
 
+Рекомендации лежат в **двух** местах: персональная домашняя лента — `feed:home:<user_id>`, публичные ленты инстанса — ключи вида `timeline:public` / `timeline:public:local` (см. [docs/REFERENCE.ru.md — Redis](docs/REFERENCE.ru.md#сводка-где-лежат-рекомендации)).
+
 #### Рекомендуемо: `hintgrid clean --redis`
 
 **Поддерживаемый проектом способ** — утилита HintGrid (те же настройки, что у пайплайна: `cd` в каталог с `.env`):

@@ -228,6 +228,8 @@ After installing a new wheel into the same venv (`pip install --force-reinstall 
 
 If timelines misbehave because of HintGrid entries in Redis, the normal approach is to **remove only HintGrid members from the sorted sets (ZSETs)** and keep native Mastodon rows (score equals post id; HintGrid uses rank-based scores with a multiplier).
 
+Recommendations are stored in **two** places: per-user home feeds — `feed:home:<user_id>`; instance public timelines — keys such as `timeline:public` / `timeline:public:local` (see [docs/REFERENCE.ru.md — Redis](docs/REFERENCE.ru.md#сводка-где-лежат-рекомендации); Russian reference).
+
 #### Recommended: `hintgrid clean --redis`
 
 **Project-supported method** — the HintGrid CLI (same config as the pipeline — run from the directory that contains `.env`):

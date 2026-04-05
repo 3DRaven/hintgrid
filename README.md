@@ -413,7 +413,7 @@ diff experiment_v1.md experiment_v2.md
 1. Incremental load from PostgreSQL.
 2. Content vectorization and writes to Neo4j.
 3. Community clustering via Neo4j GDS.
-4. Personalized feeds written to Redis.
+4. Personalized feeds (`feed:home:{account_id}`), optional public timelines (`timeline:public`, `timeline:public:local` by default) — written to Redis.
 
 ## Data model (brief)
 
