@@ -1224,6 +1224,18 @@ SET p.totalFavourites = row.total_favourites,
 
 ### Аналитика и кластеризация
 
+Перед и после этапа аналитики пайплайн проверяет, **есть ли уже материализованные сообщества**: наличие хотя бы одного узла `UserCommunity` и хотя бы одного узла `PostCommunity`. Это не обращается к свойству `cluster_id` на `User`/`Post`, пока оно ни разу не записывалось в граф (иначе Memgraph может выдать предупреждение GQL `01N52` о несуществующем ключе свойства). После команды `clean --clusters` узлы сообществ удаляются, и проверка корректно показывает отсутствие кластеров.
+
+```cypher
+// Признак: пользовательские сообщества уже созданы после кластеризации
+MATCH (uc:UserCommunity)
+RETURN count(uc) AS user_communities;
+
+// Признак: постовые сообщества уже созданы после кластеризации
+MATCH (pc:PostCommunity)
+RETURN count(pc) AS post_communities;
+```
+
 #### User Clustering (Leiden Community Detection)
 
 **Имя графа зависит от `neo4j_worker_label`:**

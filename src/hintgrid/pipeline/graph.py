@@ -1229,24 +1229,30 @@ def check_embeddings_exist(neo4j: Neo4jClient) -> bool:
 
 
 def check_clusters_exist(neo4j: Neo4jClient) -> tuple[bool, bool]:
-    """Check if user/post clusters exist.
+    """Check whether user/post community structure exists in the graph.
+
+    Uses counts of ``UserCommunity`` and ``PostCommunity`` nodes (materialized
+    after Leiden in clustering), not ``User.cluster_id`` / ``Post.cluster_id``.
+    That avoids referencing a property key before it has ever been written,
+    which would trigger Memgraph GQL warning ``01N52`` on a cold graph.
 
     Args:
         neo4j: Neo4j client
 
     Returns:
-        Tuple of (users_exist, posts_exist) where each is True if clusters exist
+        Tuple of (users_exist, posts_exist): each True if at least one matching
+        community node exists.
     """
     user_result = neo4j.execute_and_fetch_labeled(
-        "MATCH (u:__user__) WHERE u.cluster_id IS NOT NULL RETURN count(u) AS count LIMIT 1",
-        {"user": "User"},
+        "MATCH (uc:__uc__) RETURN count(uc) AS count LIMIT 1",
+        {"uc": "UserCommunity"},
     )
     user_count = coerce_int(user_result[0].get("count")) if user_result else 0
     users_exist = user_count > 0
 
     post_result = neo4j.execute_and_fetch_labeled(
-        "MATCH (p:__post__) WHERE p.cluster_id IS NOT NULL RETURN count(p) AS count LIMIT 1",
-        {"post": "Post"},
+        "MATCH (pc:__pc__) RETURN count(pc) AS count LIMIT 1",
+        {"pc": "PostCommunity"},
     )
     post_count = coerce_int(post_result[0].get("count")) if post_result else 0
     posts_exist = post_count > 0
