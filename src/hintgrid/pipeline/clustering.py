@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import re
 import uuid
-from typing import TYPE_CHECKING, LiteralString
+from typing import TYPE_CHECKING, LiteralString, cast
 
 if TYPE_CHECKING:
     from hintgrid.clients.neo4j import Neo4jClient, Neo4jValue
@@ -19,6 +19,12 @@ from hintgrid.config import HintGridSettings
 from hintgrid.pipeline.community_structure import (
     create_post_community_structure,
     create_user_community_structure,
+)
+from hintgrid.pipeline.leiden_diagnostics import (
+    collect_post_similarity_graph_stats,
+    collect_user_interaction_graph_stats,
+    leiden_write_yield_clause,
+    log_leiden_clustering_diagnostics,
 )
 from hintgrid.utils.coercion import coerce_float, coerce_int
 
@@ -232,18 +238,28 @@ def run_user_clustering(
                 },
             )
 
+        pre_leiden_stats = None
+        if settings.leiden_diagnostics_enabled:
+            pre_leiden_stats = collect_user_interaction_graph_stats(neo4j)
+
+        yield_fragment = leiden_write_yield_clause(
+            extended=settings.leiden_diagnostics_enabled,
+        )
+        user_leiden_cypher = cast(
+            "LiteralString",
+            "CALL gds.leiden.write('__graph_name__', {"
+            "  writeProperty: 'cluster_id',"
+            "  gamma: $gamma,"
+            "  maxLevels: $max_levels,"
+            "  relationshipWeightProperty: 'weight'"
+            "}) " + yield_fragment,
+        )
+
         # Run Leiden on projected graph
         # Always use relationshipWeightProperty since all edges have weights
         with console.status("[bold blue]Running Leiden algorithm...[/bold blue]"):
             result = neo4j.execute_and_fetch_labeled(
-                "CALL gds.leiden.write('__graph_name__', {"
-                "  writeProperty: 'cluster_id',"
-                "  gamma: $gamma,"
-                "  maxLevels: $max_levels,"
-                "  relationshipWeightProperty: 'weight'"
-                "}) "
-                "YIELD nodePropertiesWritten, communityCount, modularity "
-                "RETURN nodePropertiesWritten, communityCount, modularity",
+                user_leiden_cypher,
                 params={
                     "gamma": settings.leiden_resolution,
                     "max_levels": settings.leiden_max_levels,
@@ -253,8 +269,17 @@ def run_user_clustering(
         if result:
             community_count = coerce_int(result[0].get("communityCount", 0))
             print_success(f"Found {community_count:,} communities")
-            logger.info("Leiden result: %s", result[0])
             leiden_result = result[0]
+            if settings.leiden_diagnostics_enabled:
+                log_leiden_clustering_diagnostics(
+                    logger,
+                    graph_kind="user_interaction",
+                    settings=settings,
+                    pre_stats=pre_leiden_stats,
+                    leiden_row=result[0],
+                )
+            else:
+                logger.info("Leiden result: %s", result[0])
 
         # Drop projection
         neo4j.execute(
@@ -353,17 +378,27 @@ def run_post_clustering(
                     "node_label": project_label,
                 },
             )
+        pre_similarity_stats = None
+        if settings.leiden_diagnostics_enabled:
+            pre_similarity_stats = collect_post_similarity_graph_stats(neo4j)
+
+        post_yield_fragment = leiden_write_yield_clause(
+            extended=settings.leiden_diagnostics_enabled,
+        )
+        post_leiden_cypher = cast(
+            "LiteralString",
+            "CALL gds.leiden.write('__graph_name__', {"
+            "  writeProperty: 'cluster_id',"
+            "  relationshipWeightProperty: 'weight',"
+            "  gamma: $gamma,"
+            "  maxLevels: $max_levels"
+            "}) " + post_yield_fragment,
+        )
+
         # Run Leiden on similarity graph
         with console.status("[bold blue]Running Leiden algorithm...[/bold blue]"):
             result = neo4j.execute_and_fetch_labeled(
-                "CALL gds.leiden.write('__graph_name__', {"
-                "  writeProperty: 'cluster_id',"
-                "  relationshipWeightProperty: 'weight',"
-                "  gamma: $gamma,"
-                "  maxLevels: $max_levels"
-                "}) "
-                "YIELD nodePropertiesWritten, communityCount, modularity "
-                "RETURN nodePropertiesWritten, communityCount, modularity",
+                post_leiden_cypher,
                 params={
                     "gamma": settings.leiden_resolution,
                     "max_levels": settings.leiden_max_levels,
@@ -374,6 +409,16 @@ def run_post_clustering(
             community_count = coerce_int(result[0].get("communityCount", 0))
             print_success(f"Found {community_count:,} post communities")
             leiden_result = result[0]
+            if settings.leiden_diagnostics_enabled:
+                log_leiden_clustering_diagnostics(
+                    logger,
+                    graph_kind="post_similarity",
+                    settings=settings,
+                    pre_stats=pre_similarity_stats,
+                    leiden_row=result[0],
+                )
+            else:
+                logger.info("Leiden result: %s", result[0])
 
         # Drop projection (only when graph was created)
         neo4j.execute(

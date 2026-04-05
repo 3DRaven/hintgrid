@@ -334,6 +334,7 @@ _SETTINGS_GROUPS: list[tuple[str, str, list[str]]] = [
             "post_communities",
             "leiden_resolution",
             "leiden_max_levels",
+            "leiden_diagnostics_enabled",
             "knn_neighbors",
             "knn_self_neighbor_offset",
             "similarity_threshold",
