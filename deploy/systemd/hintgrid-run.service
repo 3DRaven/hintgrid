@@ -1,18 +1,20 @@
-# Example systemd unit: one-shot pipeline run (install to /etc/systemd/system/).
-# systemd does not start a second concurrent instance of this unit while ExecStart
-# is still running (Type=oneshot). Adjust User, paths, and After= for your host.
+# HintGrid batch pipeline (install to /etc/systemd/system/).
+# Same host as Mastodon: PostgreSQL + Redis (systemd), Neo4j (Docker), mastodon-web + sidekiq.
+# systemd does not start a second instance while ExecStart runs (Type=oneshot).
 #
 # Install:
 #   sudo cp deploy/systemd/hintgrid-run.service /etc/systemd/system/
 #   sudo systemctl daemon-reload
+#
+# If PostgreSQL uses only a versioned unit (e.g. postgresql@16-main.service), replace
+# postgresql.service in After=/Wants= (systemctl list-units 'postgresql*').
+# If Redis unit is named redis.service, replace redis-server.service accordingly.
 
 [Unit]
 Description=HintGrid batch pipeline (hintgrid run)
 Documentation=file:///opt/hintgrid/README.ru.md
-After=network-online.target
-Wants=network-online.target
-# Uncomment if PostgreSQL / Redis run on the same host (adjust unit names):
-# After=postgresql.service redis-server.service
+After=network-online.target postgresql.service redis-server.service docker.service mastodon-web.service mastodon-sidekiq.service
+Wants=network-online.target postgresql.service redis-server.service docker.service
 
 [Service]
 Type=oneshot

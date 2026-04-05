@@ -97,22 +97,28 @@ Stack directory and volumes:
 
 ```bash
 sudo install -d -o hintgrid -g hintgrid /opt/hintgrid/neo4j/{data,logs,import,plugins}
+# If neo4j was ever created as root, fix ownership (otherwise cp as hintgrid fails with Permission denied):
+sudo chown -R hintgrid:hintgrid /opt/hintgrid/neo4j
 # If the repo was cloned earlier, pull updates (including deploy/docker-compose.neo4j.yml):
 sudo -u hintgrid git -C /opt/hintgrid/hintgrid pull
 # If you did not clone the repo: copy deploy/docker-compose.neo4j.yml from a machine that has up-to-date sources.
-sudo -u hintgrid cp /opt/hintgrid/hintgrid/deploy/docker-compose.neo4j.yml /opt/hintgrid/neo4j/docker-compose.neo4j.yml
+sudo cp /opt/hintgrid/hintgrid/deploy/docker-compose.neo4j.yml /opt/hintgrid/neo4j/docker-compose.neo4j.yml
+sudo chown hintgrid:hintgrid /opt/hintgrid/neo4j/docker-compose.neo4j.yml
 sudo -u hintgrid nano /opt/hintgrid/neo4j/docker-compose.neo4j.yml
 # Set password: NEO4J_AUTH=neo4j/YOUR_STRONG_PASSWORD
 ```
 
-Start and verify:
+Start and verify (run as an **administrator** with `sudo` — SSH as root or a user with sudo. **Do not** rely on logging in interactively as `hintgrid`):
+
+The `hintgrid` account uses **`/usr/sbin/nologin`**, so it is not meant for password login; run its commands as **`sudo -u hintgrid …`**. Docker access for `hintgrid` requires the **`docker`** group (`usermod -aG docker hintgrid`) and a new login session (or `newgrp docker`).
 
 ```bash
-cd /opt/hintgrid/neo4j
-docker compose -f docker-compose.neo4j.yml up -d
-docker compose -f docker-compose.neo4j.yml ps
-curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:7474
+sudo -u hintgrid bash -lc 'cd /opt/hintgrid/neo4j && docker compose -f docker-compose.neo4j.yml up -d'
+sudo -u hintgrid bash -lc 'cd /opt/hintgrid/neo4j && docker compose -f docker-compose.neo4j.yml ps'
+curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:7474
 ```
+
+Running **`docker compose` as root** also works; using **`sudo -u hintgrid`** keeps ownership and group usage consistent.
 
 In HintGrid **`.env`**: `HINTGRID_NEO4J_HOST=localhost`, `HINTGRID_NEO4J_PORT=7687`, `HINTGRID_NEO4J_USERNAME=neo4j`, `HINTGRID_NEO4J_PASSWORD=` — same password as in `NEO4J_AUTH`. Ensure **7474** and **7687** are not used by other services; change `ports:` in the compose file if they conflict.
 
@@ -159,7 +165,7 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now hintgrid-run.timer
 ```
 
-Edit `User=`, `Group=`, `WorkingDirectory=`, `ExecStart=`, and the `After=` block if needed (e.g. add `postgresql.service` and `redis-server.service` when those run on the same host).
+[deploy/systemd/hintgrid-run.service](deploy/systemd/hintgrid-run.service) is configured for **Mastodon on the same machine**: **`After=`** and **`Wants=`** include **`postgresql.service`** and **`redis-server.service`** (same host; `.env` typically uses `localhost`), **`docker.service`** (Neo4j container), **`mastodon-web.service`**, **`mastodon-sidekiq.service`**. Edit only for non-standard paths, a different Unix user, a different Redis unit name (`redis.service` vs `redis-server.service`), or a versioned PostgreSQL unit only (e.g. `postgresql@16-main.service` instead of `postgresql.service`).
 
 ### 7. Manual run and checks
 
