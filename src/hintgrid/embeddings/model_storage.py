@@ -10,13 +10,20 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path  # noqa: TC003
 from typing import TYPE_CHECKING
 
 from gensim.models import FastText
 from gensim.models.phrases import Phraser, Phrases
 
+from hintgrid.embeddings.fasttext_compression import (
+    load_fasttext_for_inference,
+    quantize_fasttext_to_file,
+)
+
 if TYPE_CHECKING:
+    from gensim.models.fasttext import FastTextKeyedVectors
+
     from hintgrid.clients.neo4j import Neo4jClient
     from hintgrid.config import HintGridSettings
     from hintgrid.embeddings.text_pipeline import TextPipeline
@@ -47,7 +54,7 @@ def load_models(
     pipeline: TextPipeline,
     version: int,
     for_training: bool = False,
-) -> FastText | None:
+) -> FastText | FastTextKeyedVectors | None:
     """Load models from disk for given version.
 
     Two loading modes:
@@ -61,7 +68,7 @@ def load_models(
         for_training: If True, load Phrases for incremental training
 
     Returns:
-        Loaded FastText model, or None on failure
+        Loaded FastText or quantized KeyedVectors for inference, or None on failure
     """
     phrases_path = model_path / f"phrases_v{version}.pkl"
     phraser_path = model_path / f"phraser_v{version}.pkl"
@@ -123,21 +130,14 @@ def _load_fasttext_model(
     fasttext_path: Path,
     version: int,
     for_training: bool,
-) -> FastText:
-    """Load FastText model (full for training, quantized for inference)."""
+) -> FastText | FastTextKeyedVectors:
+    """Load FastText model (full for training, quantized KeyedVectors for inference)."""
     if for_training:
         model: FastText = FastText.load(str(fasttext_path), mmap="r")
         return model
 
     quantized_path = model_path / f"fasttext_v{version}.q.bin"
-    if quantized_path.exists():
-        try:
-            model = FastText.load(str(quantized_path), mmap="r")
-            return model
-        except Exception as e:
-            logger.warning("Failed to load quantized model, falling back to full: %s", e)
-    model = FastText.load(str(fasttext_path), mmap="r")
-    return model
+    return load_fasttext_for_inference(quantized_path, fasttext_path)
 
 
 def save_models(
@@ -179,16 +179,17 @@ def _quantize_model(
 ) -> None:
     """Quantize model for inference (10-50x size reduction)."""
     try:
-        import compress_fasttext
-
         quantized_path = model_path / f"fasttext_v{version}.q.bin"
         logger.info(
             "Quantizing model (qdim=%d) for version %d...",
             settings.fasttext_quantize_qdim,
             version,
         )
-        quantized = compress_fasttext.quantize(model, qdim=settings.fasttext_quantize_qdim)
-        quantized.save(str(quantized_path))
+        quantize_fasttext_to_file(
+            model,
+            quantized_path,
+            settings.fasttext_quantize_qdim,
+        )
         logger.info("Saved quantized model version %d to %s", version, quantized_path)
     except ImportError:
         logger.warning(

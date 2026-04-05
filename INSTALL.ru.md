@@ -220,9 +220,63 @@ sudo systemctl stop hintgrid-run.service
 
 Полная остановка «по расписанию не звать и не стартовать при boot»: `stop` + `disable` для таймера; при необходимости отдельно `stop` для сервиса.
 
-### 9. Обновление пакета после деплоя
+### 9. Обновление HintGrid
 
-После установки нового wheel в тот же venv (`pip install --force-reinstall ...`) перезапуск таймера обычно **не** обязателен — следующий запуск подхватит код. При необходимости: `sudo systemctl restart hintgrid-run.timer`.
+Перед обновлением на production сделайте **бэкапы** и при необходимости остановите таймер/текущий прогон (см. разделы [8](#8-остановка-таймера-и-сервиса-справка) и предупреждение в начале документа). Ниже — типовые команды; пути и пользователь — как в шагах 1–6 (`/opt/hintgrid`, пользователь `hintgrid`).
+
+#### 9.1. Обновление из клонированного репозитория
+
+Подтяните изменения и переустановите пакет в то же venv из каталога клона:
+
+```bash
+sudo -u hintgrid git -C /opt/hintgrid/hintgrid fetch origin
+sudo -u hintgrid git -C /opt/hintgrid/hintgrid pull --ff-only
+sudo -u hintgrid /opt/hintgrid/venv/bin/pip install -U pip
+sudo -u hintgrid /opt/hintgrid/venv/bin/pip install --upgrade /opt/hintgrid/hintgrid/
+```
+
+Проверка версии установленного пакета:
+
+```bash
+sudo -u hintgrid /opt/hintgrid/venv/bin/pip show hintgrid
+```
+
+Если `pull` невозможен без слияния (локальные правки в клоне), разберитесь с git отдельно или используйте установку из wheel (п. 9.2).
+
+#### 9.2. Обновление из wheel
+
+Скопируйте новый `.whl` на сервер, затем:
+
+```bash
+sudo -u hintgrid /opt/hintgrid/venv/bin/pip install --force-reinstall /path/to/hintgrid-*.whl
+```
+
+`--force-reinstall` удобен, если номер версии в метаданных не менялся, а код — да (как в примере [deploy.sh](deploy.sh)). Если менялись зависимости в `pyproject.toml`, установите без `--no-deps` или явно обновите зависимости.
+
+#### 9.3. Конфигурация и unit-файлы после обновления
+
+- **`.env`:** сравните свежий [env.example](env.example) с `/opt/hintgrid/.env` и перенесите **новые** переменные и комментарии; старые значения не перезаписывайте без необходимости. Права на файл: `chmod 600 /opt/hintgrid/.env`.
+- **Neo4j в Docker:** если в репозитории обновили [deploy/docker-compose.neo4j.yml](deploy/docker-compose.neo4j.yml), скопируйте файл в каталог стека (как в шаге 3), проверьте `NEO4J_AUTH` и образы, затем под пользователем с доступом к Docker:
+
+```bash
+sudo -u hintgrid bash -lc 'cd /opt/hintgrid/neo4j && docker compose -f docker-compose.neo4j.yml pull && docker compose -f docker-compose.neo4j.yml up -d'
+```
+
+- **systemd:** если менялись [deploy/systemd/hintgrid-run.service](deploy/systemd/hintgrid-run.service) или [hintgrid-run.timer](deploy/systemd/hintgrid-run.timer), скопируйте их в `/etc/systemd/system/`, затем:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart hintgrid-run.timer
+```
+
+#### 9.4. Перезапуск таймера и проверка
+
+После **только** обновления пакета в venv перезапуск таймера обычно **не** обязателен — следующий запуск `hintgrid run` подхватит код. Имеет смысл перезапустить таймер после правок unit-файлов (п. 9.3) или если нужно сбросить внутреннее состояние планировщика:
+
+```bash
+sudo systemctl restart hintgrid-run.timer
+systemctl status hintgrid-run.timer
+```
 
 ### 10. Очистка рекомендаций HintGrid в Redis (восстановление работы Mastodon)
 

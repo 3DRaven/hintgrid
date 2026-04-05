@@ -1,5 +1,8 @@
-"""Type stub for compress_fasttext library."""
+from gensim.models.fasttext import FastTextKeyedVectors
 
-from gensim.models import FastText
-
-def quantize(model: FastText, qdim: int = 100) -> FastText: ...
+def quantize_ft(
+    ft: FastTextKeyedVectors,
+    qdim: int = 100,
+    centroids: int = 255,
+    sample: object | None = None,
+) -> FastTextKeyedVectors: ...

@@ -220,9 +220,63 @@ sudo systemctl stop hintgrid-run.service
 
 Full “no schedule and no start on boot”: `stop` + `disable` for the timer; optionally `stop` the service.
 
-### 9. Updating the package after deploy
+### 9. Updating HintGrid
 
-After installing a new wheel into the same venv (`pip install --force-reinstall ...`), restarting the timer is usually **not** required — the next run picks up the code. If needed: `sudo systemctl restart hintgrid-run.timer`.
+Before updating production, take **backups** and stop the timer/current run if needed (see [section 8](#8-stopping-the-timer-and-service-reference) and the warning at the top). Below are typical commands; paths and user match steps 1–6 (`/opt/hintgrid`, user `hintgrid`).
+
+#### 9.1. Update from a cloned repository
+
+Fetch changes and reinstall the package into the same venv from the clone:
+
+```bash
+sudo -u hintgrid git -C /opt/hintgrid/hintgrid fetch origin
+sudo -u hintgrid git -C /opt/hintgrid/hintgrid pull --ff-only
+sudo -u hintgrid /opt/hintgrid/venv/bin/pip install -U pip
+sudo -u hintgrid /opt/hintgrid/venv/bin/pip install --upgrade /opt/hintgrid/hintgrid/
+```
+
+Check the installed package version:
+
+```bash
+sudo -u hintgrid /opt/hintgrid/venv/bin/pip show hintgrid
+```
+
+If `pull` cannot fast-forward (local edits in the clone), resolve git separately or use a wheel install (9.2).
+
+#### 9.2. Update from a wheel
+
+Copy the new `.whl` to the server, then:
+
+```bash
+sudo -u hintgrid /opt/hintgrid/venv/bin/pip install --force-reinstall /path/to/hintgrid-*.whl
+```
+
+`--force-reinstall` is useful when the version metadata did not change but the code did (as in [deploy.sh](deploy.sh)). If `pyproject.toml` dependencies changed, install without `--no-deps` or upgrade dependencies explicitly.
+
+#### 9.3. Config and unit files after an update
+
+- **`.env`:** diff fresh [env.example](env.example) against `/opt/hintgrid/.env` and add **new** variables and comments; do not overwrite working values without cause. File permissions: `chmod 600 /opt/hintgrid/.env`.
+- **Neo4j in Docker:** if [deploy/docker-compose.neo4j.yml](deploy/docker-compose.neo4j.yml) changed upstream, copy it into the stack directory (as in step 3), verify `NEO4J_AUTH` and images, then under a user with Docker access:
+
+```bash
+sudo -u hintgrid bash -lc 'cd /opt/hintgrid/neo4j && docker compose -f docker-compose.neo4j.yml pull && docker compose -f docker-compose.neo4j.yml up -d'
+```
+
+- **systemd:** if [deploy/systemd/hintgrid-run.service](deploy/systemd/hintgrid-run.service) or [hintgrid-run.timer](deploy/systemd/hintgrid-run.timer) changed, copy them to `/etc/systemd/system/`, then:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart hintgrid-run.timer
+```
+
+#### 9.4. Timer restart and verification
+
+After **only** upgrading the package in the venv, restarting the timer is usually **not** required — the next `hintgrid run` picks up the code. Restart the timer after unit file changes (9.3) or if you need to reset scheduler state:
+
+```bash
+sudo systemctl restart hintgrid-run.timer
+systemctl status hintgrid-run.timer
+```
 
 ### 10. Clearing HintGrid recommendations in Redis (restore Mastodon behavior)
 

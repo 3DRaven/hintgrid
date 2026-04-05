@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 from numpy.typing import NDArray
 from gensim.models import FastText
+from gensim.models.fasttext import FastTextKeyedVectors
 from gensim.models.phrases import Phraser, Phrases
 from nltk.tokenize import TweetTokenizer
 
@@ -41,6 +42,10 @@ from hintgrid.cli.console import (
 )
 from hintgrid.clients.postgres import PostgresCorpus, build_postgres_dsn
 from hintgrid.config import HintGridSettings
+from hintgrid.embeddings.fasttext_compression import (
+    load_fasttext_for_inference,
+    quantize_fasttext_to_file,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -311,7 +316,7 @@ class FastTextEmbeddingService:
         self._since_date = since_date
 
         self._pipeline = TextPipeline()
-        self._model: FastText | None = None
+        self._model: FastText | FastTextKeyedVectors | None = None
         self._state: FastTextState | None = None
 
         # Model storage path
@@ -385,12 +390,14 @@ class FastTextEmbeddingService:
         if self._model is None:
             raise RuntimeError("Model not loaded")
 
+        kv = self._inference_keyed_vectors()
+
         # Collect raw vectors for batch normalization
         raw_vectors: list[NDArray[np.float32]] = []
         for _, text in items:
             tokens = self._pipeline.transform(text)
             if tokens:
-                vec = self._model.wv.get_sentence_vector(tokens)
+                vec = kv.get_sentence_vector(tokens)
                 raw_vectors.append(np.asarray(vec, dtype=np.float32))
             else:
                 raw_vectors.append(self._generate_fallback_vector(text))
@@ -535,6 +542,17 @@ class FastTextEmbeddingService:
                 "[cyan]Building vocabulary[/cyan]", total=vocab_total
             )
             if is_incremental and self._model is not None:
+                if not isinstance(self._model, FastText):
+                    return TrainResult(
+                        success=False,
+                        corpus_size=doc_count,
+                        vocab_size=0,
+                        version=0,
+                        message=(
+                            "Incremental training requires a full FastText checkpoint "
+                            "on disk (not KeyedVectors-only)"
+                        ),
+                    )
                 # Incremental: update vocab then train
                 phrased_corpus = _PhrasedCorpusWrapper(
                     corpus, self._pipeline, progress, task,
@@ -563,7 +581,17 @@ class FastTextEmbeddingService:
                 self._model.build_vocab(corpus_iterable=phrased_corpus)
                 corpus_count = self._model.corpus_count
 
-            built_vocab_size = len(self._model.wv)
+            if self._model is None or not isinstance(self._model, FastText):
+                return TrainResult(
+                    success=False,
+                    corpus_size=corpus_count,
+                    vocab_size=0,
+                    version=0,
+                    message="Full FastText model required for training",
+                )
+            ft_for_training = self._model
+
+            built_vocab_size = len(ft_for_training.wv)
             progress.update(
                 task,
                 description=(
@@ -614,7 +642,7 @@ class FastTextEmbeddingService:
             phrased_corpus = _PhrasedCorpusWrapper(
                 corpus, self._pipeline, progress, task, total_epochs=epochs
             )
-            self._model.train(
+            ft_for_training.train(
                 corpus_iterable=phrased_corpus,
                 total_examples=corpus_count,
                 epochs=epochs,
@@ -628,7 +656,7 @@ class FastTextEmbeddingService:
                 completed=train_total,
             )
 
-        vocab_size = len(self._model.wv)
+        vocab_size = len(ft_for_training.wv)
         max_post_id = corpus.max_id
 
         # Get current version and increment
@@ -686,7 +714,7 @@ class FastTextEmbeddingService:
             raise RuntimeError("Model not loaded")
 
         # Get sentence vector
-        embedding = self._model.wv.get_sentence_vector(tokens)
+        embedding = self._inference_keyed_vectors().get_sentence_vector(tokens)
 
         # Normalize to unit vector
         norm = float(np.linalg.norm(embedding))
@@ -694,6 +722,15 @@ class FastTextEmbeddingService:
             embedding = embedding / norm
 
         return [float(x) for x in embedding]
+
+    def _inference_keyed_vectors(self) -> FastTextKeyedVectors:
+        """Return KeyedVectors for embedding (full FastText or quantized KV)."""
+        m = self._model
+        if m is None:
+            raise RuntimeError("Model not loaded")
+        if isinstance(m, FastText):
+            return m.wv
+        return m
 
     def _generate_fallback_vector(self, text: str) -> NDArray[np.float32]:
         """Generate deterministic fallback vector for texts without valid tokens.
@@ -799,24 +836,16 @@ class FastTextEmbeddingService:
                 self._model = FastText.load(str(fasttext_path), mmap="r")
                 logger.debug("Loaded full FastText model for training, version %d", version)
             else:
-                # Inference mode: prefer quantized model (10-50x smaller)
                 quantized_path = self._model_path / f"fasttext_v{version}.q.bin"
-                if quantized_path.exists():
-                    try:
-                        self._model = FastText.load(str(quantized_path), mmap="r")
-                        logger.debug(
-                            "Loaded quantized FastText model for inference, version %d", version
-                        )
-                    except Exception as e:
-                        logger.warning(
-                            "Failed to load quantized model, falling back to full model: %s", e
-                        )
-                        self._model = FastText.load(str(fasttext_path), mmap="r")
-                else:
-                    # Fallback to full model if quantized not available
-                    self._model = FastText.load(str(fasttext_path), mmap="r")
+                self._model = load_fasttext_for_inference(quantized_path, fasttext_path)
+                if quantized_path.exists() and isinstance(self._model, FastTextKeyedVectors):
                     logger.debug(
-                        "Quantized model not found, loaded full model for inference, version %d",
+                        "Loaded quantized FastText KeyedVectors for inference, version %d",
+                        version,
+                    )
+                else:
+                    logger.debug(
+                        "Loaded full FastText model for inference, version %d",
                         version,
                     )
 
@@ -853,22 +882,28 @@ class FastTextEmbeddingService:
 
             # Quantize model if enabled (10-50x size reduction for inference)
             if self._settings.fasttext_quantize:
+                quantized_path = self._model_path / f"fasttext_v{version}.q.bin"
                 try:
-                    import compress_fasttext
-
-                    quantized_path = self._model_path / f"fasttext_v{version}.q.bin"
                     logger.info(
                         "Quantizing model (qdim=%d) for version %d...",
                         self._settings.fasttext_quantize_qdim,
                         version,
                     )
-                    quantized_model = compress_fasttext.quantize(
-                        self._model, qdim=self._settings.fasttext_quantize_qdim
-                    )
-                    quantized_model.save(str(quantized_path))
-                    logger.info(
-                        "Saved quantized model version %d to %s", version, quantized_path
-                    )
+                    ft_model = self._model
+                    if not isinstance(ft_model, FastText):
+                        logger.warning(
+                            "Skipping quantization: expected full FastText model, got %s",
+                            type(ft_model).__name__,
+                        )
+                    else:
+                        quantize_fasttext_to_file(
+                            ft_model,
+                            quantized_path,
+                            self._settings.fasttext_quantize_qdim,
+                        )
+                        logger.info(
+                            "Saved quantized model version %d to %s", version, quantized_path
+                        )
                 except ImportError:
                     logger.warning(
                         "compress-fasttext not available, skipping quantization. "
