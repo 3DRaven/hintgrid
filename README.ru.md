@@ -27,7 +27,7 @@ HintGrid — персонализированная рекомендательн
 
 ## Установка на сервере Mastodon (systemd)
 
-Ниже — полный сценарий для **той же машины**, где работает Mastodon: общий PostgreSQL и Redis; Neo4j поднимается отдельно (см. [docs/REFERENCE.ru.md](docs/REFERENCE.ru.md)). Пути и имя пользователя совпадают с примерами в репозитории (`deploy/systemd/`).
+Ниже — полный сценарий для **той же машины**, где работает Mastodon: общий PostgreSQL и Redis; **Neo4j** можно поднять в Docker по [deploy/docker-compose.neo4j.yml](deploy/docker-compose.neo4j.yml) (шаг 3) или на отдельном хосте (см. [docs/REFERENCE.ru.md](docs/REFERENCE.ru.md)). Пути и имя пользователя совпадают с примерами в репозитории (`deploy/systemd/`).
 
 ### 1. Системные пакеты и пользователь
 
@@ -46,6 +46,15 @@ sudo useradd -r -m -d /opt/hintgrid -s /usr/sbin/nologin hintgrid 2>/dev/null ||
 sudo mkdir -p /opt/hintgrid
 sudo chown hintgrid:hintgrid /opt/hintgrid
 ```
+
+Клонирование репозитория **под тем же пользователем** (нужен `git`; URL замените на свой — HTTPS или SSH для приватного репозитория):
+
+```bash
+sudo apt install -y git
+sudo -u hintgrid git clone https://github.com/OWNER/hintgrid.git /opt/hintgrid/hintgrid
+```
+
+Каталог **`/opt/hintgrid/hintgrid`** — исходники; виртуальное окружение ниже кладётся в **`/opt/hintgrid/venv`**, отдельно от клона. Если ставите только **wheel** и репозиторий на сервере не нужен, этот блок можно пропустить (тогда в следующих шагах подставляйте пути к локальным файлам вручную).
 
 ### 2. PostgreSQL: пользователь только на чтение (база Mastodon)
 
@@ -73,7 +82,52 @@ psql -h localhost -U hintgrid -d mastodon_production -c "SELECT COUNT(*) FROM ac
 
 Подробнее о правах и вариантах — в разделе [Подготовка баз данных](#подготовка-баз-данных) ниже.
 
-### 3. Виртуальное окружение и пакет HintGrid
+### 3. Neo4j в Docker на том же хосте
+
+Отдельный compose-файл **только с Neo4j** (GDS + APOC): [deploy/docker-compose.neo4j.yml](deploy/docker-compose.neo4j.yml). Данные на диске хоста в каталоге `neo4j/` рядом с файлом compose.
+
+Установите Docker и **Compose v2** при необходимости, затем под пользователем `hintgrid` (или от root: смените владельца каталогов). Имя пакета с плагином `docker compose` **зависит от дистрибутива**:
+
+```bash
+sudo apt update
+sudo apt install -y docker.io
+sudo systemctl enable --now docker
+# Ubuntu 25.04 (Plucky) и ряд выпусков: пакет называется docker-compose-v2
+sudo apt install -y docker-compose-v2
+# Debian и многие Ubuntu: часто доступен docker-compose-plugin (если нет — см. apt search docker-compose)
+# sudo apt install -y docker-compose-plugin
+sudo usermod -aG docker hintgrid
+# Перелогиньтесь или newgrp docker, чтобы группа docker применилась.
+```
+
+Проверка: `docker compose version`. Если команды `docker compose` нет, но установлен классический пакет `docker-compose` (v1), используйте `docker-compose -f ...` вместо `docker compose -f ...` в командах ниже.
+
+Каталог для стека и тома (пути относительно `docker compose`):
+
+```bash
+sudo install -d -o hintgrid -g hintgrid /opt/hintgrid/neo4j/{data,logs,import,plugins}
+# Если клонировали репозиторий раньше, подтяните файлы (в т.ч. deploy/docker-compose.neo4j.yml):
+sudo -u hintgrid git -C /opt/hintgrid/hintgrid pull
+# Если репозиторий не клонировали: скопируйте deploy/docker-compose.neo4j.yml с машины, где есть актуальные исходники.
+sudo -u hintgrid cp /opt/hintgrid/hintgrid/deploy/docker-compose.neo4j.yml /opt/hintgrid/neo4j/docker-compose.neo4j.yml
+sudo -u hintgrid nano /opt/hintgrid/neo4j/docker-compose.neo4j.yml
+# Задайте пароль: NEO4J_AUTH=neo4j/ВАШ_НАДЁЖНЫЙ_ПАРОЛЬ
+```
+
+Запуск и проверка:
+
+```bash
+cd /opt/hintgrid/neo4j
+docker compose -f docker-compose.neo4j.yml up -d
+docker compose -f docker-compose.neo4j.yml ps
+curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:7474
+```
+
+В **`.env` HintGrid** укажите: `HINTGRID_NEO4J_HOST=localhost`, `HINTGRID_NEO4J_PORT=7687`, `HINTGRID_NEO4J_USERNAME=neo4j`, `HINTGRID_NEO4J_PASSWORD=` — тот же пароль, что в `NEO4J_AUTH`. Порты **7474** и **7687** не должны быть заняты другими сервисами; при конфликте измените проброс `ports:` в compose.
+
+После перезагрузки сервера контейнер с `restart: unless-stopped` поднимется вместе с Docker.
+
+### 4. Виртуальное окружение и пакет HintGrid
 
 Из каталога с исходниками или с собранным wheel:
 
@@ -81,17 +135,18 @@ psql -h localhost -U hintgrid -d mastodon_production -c "SELECT COUNT(*) FROM ac
 sudo -u hintgrid python3 -m venv /opt/hintgrid/venv
 sudo -u hintgrid /opt/hintgrid/venv/bin/pip install -U pip
 
-# Вариант A: установка из wheel (например после python -m build)
+# Вариант A: установка из wheel (например после python -m build на другой машине)
 sudo -u hintgrid /opt/hintgrid/venv/bin/pip install /path/to/hintgrid-*.whl
 
-# Вариант B: из клона репозитория
-# sudo -u hintgrid /opt/hintgrid/venv/bin/pip install /path/to/hintgrid/
+# Вариант B: из клона репозитория (см. шаг 1)
+sudo -u hintgrid /opt/hintgrid/venv/bin/pip install /opt/hintgrid/hintgrid/
 ```
 
-### 4. Конфигурация окружения
+### 5. Конфигурация окружения
 
 ```bash
-sudo -u hintgrid cp /path/to/hintgrid/env.example /opt/hintgrid/.env
+# Если репозиторий не клонировали: укажите путь к env.example вручную.
+sudo -u hintgrid cp /opt/hintgrid/hintgrid/env.example /opt/hintgrid/.env
 sudo -u hintgrid nano /opt/hintgrid/.env
 sudo chmod 600 /opt/hintgrid/.env
 ```
@@ -101,22 +156,22 @@ sudo chmod 600 /opt/hintgrid/.env
 - **`HINTGRID_REDIS_DB`** — тот же логический номер базы Redis, который использует Mastodon (часто `0`), иначе лента пишется «мимо» инстанса.
 - **`HINTGRID_REDIS_NAMESPACE`** — если в Mastodon задан `REDIS_NAMESPACE`, задайте то же значение.
 
-### 5. Unit-файлы systemd
+### 6. Unit-файлы systemd
 
 В репозитории лежат примеры: [deploy/systemd/hintgrid-run.service](deploy/systemd/hintgrid-run.service) и [deploy/systemd/hintgrid-run.timer](deploy/systemd/hintgrid-run.timer) (`Nice=10`, `IOSchedulingClass=best-effort`, `TimeoutStartSec=infinity` для длительного пайплайна). Таймер по умолчанию: **первый прогон** через `OnBootSec`, далее **`OnUnitInactiveSec=10min`** — следующий запуск через 10 минут **после завершения** предыдущего (удобно для длинных batch). Пока `ExecStart` ещё выполняется, systemd **не запускает второй экземпляр** того же unit (`Type=oneshot`). Файл блокировки `flock` не нужен, если единственная точка входа — этот сервис и его timer (для запусков из cron/другого unit к тому же пайплайну блокировка может быть уместна отдельно). Альтернатива «каждые 10 минут по часам» — закомментированный в таймере вариант `OnCalendar=*-*-* *:0/10:00`.
 
 Скопируйте их на сервер и включите таймер:
 
 ```bash
-sudo cp /path/to/hintgrid/deploy/systemd/hintgrid-run.service /etc/systemd/system/
-sudo cp /path/to/hintgrid/deploy/systemd/hintgrid-run.timer /etc/systemd/system/
+sudo cp /opt/hintgrid/hintgrid/deploy/systemd/hintgrid-run.service /etc/systemd/system/
+sudo cp /opt/hintgrid/hintgrid/deploy/systemd/hintgrid-run.timer /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now hintgrid-run.timer
 ```
 
 При необходимости отредактируйте `User=`, `Group=`, `WorkingDirectory=`, `ExecStart=` и блок `After=` (например добавьте `postgresql.service` и `redis-server.service`, если сервисы на этом хосте).
 
-### 6. Ручной запуск и проверка
+### 7. Ручной запуск и проверка
 
 Запуск пайплайна **без блокировки** терминала (долгий прогон):
 
@@ -135,7 +190,7 @@ journalctl -u hintgrid-run.service -f
 
 Разовый запуск по таймеру можно не ждать: `sudo systemctl start --no-block hintgrid-run.service`.
 
-### 7. Остановка таймера и сервиса (справка)
+### 8. Остановка таймера и сервиса (справка)
 
 Остановить **таймер** (новые срабатывания по расписанию не планируются; уже запущенный `hintgrid run` **не** отменяется только этой командой):
 
@@ -157,7 +212,7 @@ sudo systemctl stop hintgrid-run.service
 
 Полная остановка «по расписанию не звать и не стартовать при boot»: `stop` + `disable` для таймера; при необходимости отдельно `stop` для сервиса.
 
-### 8. Обновление пакета после деплоя
+### 9. Обновление пакета после деплоя
 
 После установки нового wheel в тот же venv (`pip install --force-reinstall ...`) перезапуск таймера обычно **не** обязателен — следующий запуск подхватит код. При необходимости: `sudo systemctl restart hintgrid-run.timer`.
 

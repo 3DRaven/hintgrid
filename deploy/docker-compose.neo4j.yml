@@ -1,0 +1,38 @@
+# Neo4j only — run on the same host as Mastodon (Docker Compose).
+# Copy into a working directory (e.g. /opt/hintgrid/neo4j), create ./data ./logs ./import ./plugins, set NEO4J_AUTH, then:
+#   docker compose -f docker-compose.neo4j.yml up -d
+#
+# HintGrid .env: HINTGRID_NEO4J_HOST=localhost HINTGRID_NEO4J_PORT=7687
+# (and password matching NEO4J_AUTH below).
+
+services:
+  neo4j:
+    image: neo4j:5.26.0
+    container_name: hintgrid-neo4j
+    ports:
+      - "7474:7474" # HTTP Browser
+      - "7687:7687" # Bolt
+    environment:
+      NEO4J_AUTH: neo4j/CHANGE_ME
+      NEO4J_PLUGINS: '["graph-data-science", "apoc"]'
+      NEO4J_ACCEPT_LICENSE_AGREEMENT: "yes"
+      NEO4J_server_memory_heap_initial__size: 1G
+      NEO4J_server_memory_heap_max__size: 6G
+      NEO4J_server_memory_pagecache_size: 1G
+      NEO4J_server_default__listen__address: 0.0.0.0
+      NEO4J_dbms_security_procedures_unrestricted: gds.*,apoc.*
+    volumes:
+      - ./data:/data
+      - ./logs:/logs
+      - ./import:/var/lib/neo4j/import
+      - ./plugins:/plugins
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget --no-verbose --tries=1 --spider http://localhost:7474 || exit 1",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5

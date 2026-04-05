@@ -27,7 +27,7 @@ Full reference documentation is in [docs/REFERENCE.ru.md](docs/REFERENCE.ru.md).
 
 ## Installing on a Mastodon server (systemd)
 
-Below is a full scenario for **the same machine** that runs Mastodon: shared PostgreSQL and Redis; Neo4j runs separately (see [docs/REFERENCE.ru.md](docs/REFERENCE.ru.md)). Paths and username match the examples in the repository (`deploy/systemd/`).
+Below is a full scenario for **the same machine** that runs Mastodon: shared PostgreSQL and Redis; **Neo4j** can run in Docker using [deploy/docker-compose.neo4j.yml](deploy/docker-compose.neo4j.yml) (step 3) or on another host (see [docs/REFERENCE.ru.md](docs/REFERENCE.ru.md)). Paths and username match the examples in the repository (`deploy/systemd/`).
 
 ### 1. System packages and user
 
@@ -73,7 +73,52 @@ psql -h localhost -U hintgrid -d mastodon_production -c "SELECT COUNT(*) FROM ac
 
 More on privileges and options in [Database setup](#database-setup) below.
 
-### 3. Virtual environment and HintGrid package
+### 3. Neo4j in Docker on the same host
+
+A **Neo4j-only** compose file (GDS + APOC): [deploy/docker-compose.neo4j.yml](deploy/docker-compose.neo4j.yml). Data is stored on the host under `data/`, `logs/`, `import/`, and `plugins/` next to the compose file.
+
+Install Docker and **Compose v2** if needed, then (as `hintgrid`, or use `root` and fix ownership). The **package name** for the `docker compose` plugin **varies by distro**:
+
+```bash
+sudo apt update
+sudo apt install -y docker.io
+sudo systemctl enable --now docker
+# Ubuntu 25.04 (Plucky) and some releases: package is docker-compose-v2
+sudo apt install -y docker-compose-v2
+# Debian and many Ubuntu images: docker-compose-plugin is common (use apt search docker-compose if unsure)
+# sudo apt install -y docker-compose-plugin
+sudo usermod -aG docker hintgrid
+# Log out and back in, or run newgrp docker, for the docker group to apply.
+```
+
+Check: `docker compose version`. If `docker compose` is missing but the legacy `docker-compose` (v1) package is installed, use `docker-compose -f ...` instead of `docker compose -f ...` below.
+
+Stack directory and volumes:
+
+```bash
+sudo install -d -o hintgrid -g hintgrid /opt/hintgrid/neo4j/{data,logs,import,plugins}
+# If the repo was cloned earlier, pull updates (including deploy/docker-compose.neo4j.yml):
+sudo -u hintgrid git -C /opt/hintgrid/hintgrid pull
+# If you did not clone the repo: copy deploy/docker-compose.neo4j.yml from a machine that has up-to-date sources.
+sudo -u hintgrid cp /opt/hintgrid/hintgrid/deploy/docker-compose.neo4j.yml /opt/hintgrid/neo4j/docker-compose.neo4j.yml
+sudo -u hintgrid nano /opt/hintgrid/neo4j/docker-compose.neo4j.yml
+# Set password: NEO4J_AUTH=neo4j/YOUR_STRONG_PASSWORD
+```
+
+Start and verify:
+
+```bash
+cd /opt/hintgrid/neo4j
+docker compose -f docker-compose.neo4j.yml up -d
+docker compose -f docker-compose.neo4j.yml ps
+curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:7474
+```
+
+In HintGrid **`.env`**: `HINTGRID_NEO4J_HOST=localhost`, `HINTGRID_NEO4J_PORT=7687`, `HINTGRID_NEO4J_USERNAME=neo4j`, `HINTGRID_NEO4J_PASSWORD=` — same password as in `NEO4J_AUTH`. Ensure **7474** and **7687** are not used by other services; change `ports:` in the compose file if they conflict.
+
+After reboot, the container with `restart: unless-stopped` comes back with Docker.
+
+### 4. Virtual environment and HintGrid package
 
 From the source tree or a built wheel:
 
@@ -88,7 +133,7 @@ sudo -u hintgrid /opt/hintgrid/venv/bin/pip install /path/to/hintgrid-*.whl
 # sudo -u hintgrid /opt/hintgrid/venv/bin/pip install /path/to/hintgrid/
 ```
 
-### 4. Environment configuration
+### 5. Environment configuration
 
 ```bash
 sudo -u hintgrid cp /path/to/hintgrid/env.example /opt/hintgrid/.env
@@ -101,7 +146,7 @@ Fill in PostgreSQL (read-only Mastodon user), Neo4j, and Redis. For **running al
 - **`HINTGRID_REDIS_DB`** — the same logical Redis database number Mastodon uses (often `0`), otherwise the feed is written “beside” the instance.
 - **`HINTGRID_REDIS_NAMESPACE`** — if Mastodon sets `REDIS_NAMESPACE`, set the same value here.
 
-### 5. systemd unit files
+### 6. systemd unit files
 
 Examples in the repo: [deploy/systemd/hintgrid-run.service](deploy/systemd/hintgrid-run.service) and [deploy/systemd/hintgrid-run.timer](deploy/systemd/hintgrid-run.timer) (`Nice=10`, `IOSchedulingClass=best-effort`, `TimeoutStartSec=infinity` for long pipelines). Default timer: **first run** after `OnBootSec`, then **`OnUnitInactiveSec=10min`** — next run 10 minutes **after the previous job finished** (good for long batches). While `ExecStart` is running, systemd **does not start a second instance** of the same unit (`Type=oneshot`). A `flock` lock file is unnecessary if the only entry point is this service and its timer (for cron/other units hitting the same pipeline, a separate lock may still make sense). An alternative “every 10 minutes on the clock” is the commented `OnCalendar=*-*-* *:0/10:00` in the timer.
 
@@ -116,7 +161,7 @@ sudo systemctl enable --now hintgrid-run.timer
 
 Edit `User=`, `Group=`, `WorkingDirectory=`, `ExecStart=`, and the `After=` block if needed (e.g. add `postgresql.service` and `redis-server.service` when those run on the same host).
 
-### 6. Manual run and checks
+### 7. Manual run and checks
 
 Run the pipeline **without blocking** the terminal (long run):
 
@@ -135,7 +180,7 @@ journalctl -u hintgrid-run.service -f
 
 You need not wait for the timer for a one-off: `sudo systemctl start --no-block hintgrid-run.service`.
 
-### 7. Stopping the timer and service (reference)
+### 8. Stopping the timer and service (reference)
 
 Stop the **timer** (no new scheduled runs; a running `hintgrid run` is **not** cancelled by this alone):
 
@@ -157,7 +202,7 @@ sudo systemctl stop hintgrid-run.service
 
 Full “no schedule and no start on boot”: `stop` + `disable` for the timer; optionally `stop` the service.
 
-### 8. Updating the package after deploy
+### 9. Updating the package after deploy
 
 After installing a new wheel into the same venv (`pip install --force-reinstall ...`), restarting the timer is usually **not** required — the next run picks up the code. If needed: `sudo systemctl restart hintgrid-run.timer`.
 
