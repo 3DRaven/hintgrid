@@ -14,6 +14,10 @@ if TYPE_CHECKING:
 
 from hintgrid.cli.console import console, print_step, print_success
 from hintgrid.config import HintGridSettings
+from hintgrid.pipeline.community_structure import (
+    create_post_community_structure,
+    create_user_community_structure,
+)
 from hintgrid.utils.coercion import coerce_float, coerce_int
 
 logger = logging.getLogger(__name__)
@@ -140,7 +144,11 @@ validate_gds_name(POST_GRAPH_NAME)
 validate_gds_name(POST_EMBEDDING_INDEX_BASE_NAME)
 
 
-def run_user_clustering(neo4j: Neo4jClient, settings: HintGridSettings) -> None:
+def run_user_clustering(
+    neo4j: Neo4jClient,
+    settings: HintGridSettings,
+    progress: Progress | None = None,
+) -> None:
     """Run Leiden clustering on User nodes via INTERACTS_WITH relationships.
 
     INTERACTS_WITH includes aggregated interactions (likes, replies, reblogs,
@@ -255,26 +263,7 @@ def run_user_clustering(neo4j: Neo4jClient, settings: HintGridSettings) -> None:
 
     # Step 3: Create community structure
     print_step(3, USER_CLUSTERING_STEPS, "Creating community structure...")
-
-    with console.status("[bold blue]Building communities...[/bold blue]"):
-        # Delete old BELONGS_TO (idempotency)
-        neo4j.execute_labeled(
-            "MATCH (u:__user__)-[old:BELONGS_TO]->(uc:__uc__) DELETE old",
-            {"user": "User", "uc": "UserCommunity"},
-        )
-
-        # Create UserCommunity nodes and BELONGS_TO relationships
-        neo4j.execute_labeled(
-            "MATCH (u:__user__) WHERE u.cluster_id IS NOT NULL "
-            "WITH u, u.cluster_id AS cluster_id "
-            "CALL apoc.merge.node($uc_labels, {id: cluster_id}, {}, {}) "
-            "YIELD node AS uc "
-            "MERGE (u)-[:BELONGS_TO]->(uc)",
-            {"user": "User", "uc": "UserCommunity"},
-            {
-                "uc_labels": neo4j.labels_list("UserCommunity"),
-            },
-        )
+    create_user_community_structure(neo4j, settings, progress)
 
     # Step 4: Update community sizes
     print_step(4, USER_CLUSTERING_STEPS, "Updating community sizes...")
@@ -393,26 +382,7 @@ def run_post_clustering(
 
     # Step 3: Create community structure
     print_step(3, POST_CLUSTERING_STEPS, "Creating community structure...")
-
-    with console.status("[bold blue]Building communities...[/bold blue]"):
-        # Delete old BELONGS_TO (idempotency)
-        neo4j.execute_labeled(
-            "MATCH (p:__post__)-[old:BELONGS_TO]->(pc:__pc__) DELETE old",
-            {"post": "Post", "pc": "PostCommunity"},
-        )
-
-        # Create PostCommunity nodes and BELONGS_TO relationships
-        neo4j.execute_labeled(
-            "MATCH (p:__post__) WHERE p.cluster_id IS NOT NULL "
-            "WITH p, p.cluster_id AS cluster_id "
-            "CALL apoc.merge.node($pc_labels, {id: cluster_id}, {}, {}) "
-            "YIELD node AS pc "
-            "MERGE (p)-[:BELONGS_TO]->(pc)",
-            {"post": "Post", "pc": "PostCommunity"},
-            {
-                "pc_labels": neo4j.labels_list("PostCommunity"),
-            },
-        )
+    create_post_community_structure(neo4j, settings, progress)
 
     # Step 4: Update community sizes
     print_step(4, POST_CLUSTERING_STEPS, "Updating community sizes...")

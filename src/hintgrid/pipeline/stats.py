@@ -164,11 +164,11 @@ def _collect_user_connectivity(neo4j: Neo4jClient) -> dict[str, float | int]:
     Returns:
         Dictionary with: avg_interacts, median_interacts, max_interacts, isolated_users
     """
+    # COUNT {} avoids OPTIONAL MATCH + aggregates over nullable groups (Neo4j 01G11 warnings).
     result = list(
         neo4j.execute_and_fetch_labeled(
             "MATCH (u:__user__) "
-            "OPTIONAL MATCH (u)-[r:INTERACTS_WITH]->() "
-            "WITH u, count(r) AS out_degree "
+            "WITH u, COUNT { (u)-[r:INTERACTS_WITH]->() } AS out_degree "
             "RETURN "
             "  COALESCE(avg(out_degree), 0.0) AS avg_interacts, "
             "  COALESCE(percentileCont(out_degree, 0.5), 0.0) AS median_interacts, "
