@@ -1,0 +1,6 @@
+---
+alwaysApply: true
+---
+Always use .venv as base environment for python
+
+Enforce a maximum file size limit of 500 lines for all source code and test files within the project. Files exceeding this limit must be refactored by splitting them into smaller, cohesive modules or components. This refactoring should maintain architectural integrity, ensure logical separation of concerns, and preserve the existing testing strategy.

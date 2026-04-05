@@ -1,0 +1,41 @@
+"""Cypher fragments for feed scoring (keeps feed.py small; avoids Neo4j property warnings)."""
+
+from __future__ import annotations
+
+from typing import LiteralString
+
+from hintgrid.config import HintGridSettings
+
+
+def pagerank_binding(settings: HintGridSettings) -> LiteralString:
+    """WITH-clause binding for pagerank; omit p.pagerank when PageRank is disabled (avoids 01N52)."""
+    if settings.pagerank_enabled:
+        return "     COALESCE(p.pagerank, 0.0) AS pagerank"
+    return "     0.0 AS pagerank"
+
+
+def pagerank_score_weight_line(settings: HintGridSettings) -> LiteralString:
+    """Adds pagerank term to score; empty when PageRank is off."""
+    if settings.pagerank_enabled:
+        return "     pagerank * $pagerank_weight + "
+    return ""
+
+
+def build_feed_filters(rel_types: frozenset[str] | None) -> LiteralString:
+    """Build NOT EXISTS filter clauses for feed queries."""
+    parts: LiteralString = ""
+    if rel_types is None or "WAS_RECOMMENDED" in rel_types:
+        parts = parts + "  AND NOT EXISTS { (u)-[:WAS_RECOMMENDED]->(p) } "
+    parts = parts + "  AND NOT EXISTS { (u)-[:WROTE]->(p) } "
+    if rel_types is None or "FAVORITED" in rel_types:
+        parts = parts + "  AND NOT EXISTS { (u)-[:FAVORITED]->(p) } "
+    if rel_types is None or "HATES_USER" in rel_types:
+        parts = parts + "  AND NOT EXISTS { (p)<-[:WROTE]-(:__user__)<-[:HATES_USER]-(u) } "
+    return parts
+
+
+def build_popularity_expr(rel_types: frozenset[str] | None) -> LiteralString:
+    """Build popularity expression from FAVORITED count or zero fallback."""
+    if rel_types is None or "FAVORITED" in rel_types:
+        return "     COUNT { (p)<-[:FAVORITED]-() } AS popularity"
+    return "     0 AS popularity"

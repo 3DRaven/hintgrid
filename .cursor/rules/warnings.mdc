@@ -1,0 +1,43 @@
+---
+alwaysApply: true
+---
+# Code Quality and Test Standards
+
+## Always Fix All Warnings - Never Suppress Them
+
+### Core Principle: FIX, DON'T HIDE
+Warnings indicate real problems. Never suppress or ignore them - always fix the root cause.
+
+## Always Fix All Warnings
+1. **pytest warnings**: After running tests, always fix ALL warnings shown in test output:
+   - DeprecationWarnings
+   - PytestWarnings
+   - ResourceWarnings
+   - Any other warnings in test summary
+
+2. **ruff linter warnings**: Before committing code, run `ruff check .` and fix ALL issues:
+   - Unused imports (F401)
+   - Undefined names (F821)
+   - Line length violations (E501)
+   - Import sorting issues (I001)
+   - Any other ruff violations
+
+3. **Zero warnings policy**: Code is not ready until:
+   - `pytest` shows 0 warnings
+   - `ruff check .` returns clean (no errors, no warnings)
+   - pyright show 0 warnings
+   - All deprecation warnings are addressed
+
+## Workflow
+```bash
+# 1. Run tests and check for warnings
+pytest -v
+
+# 2. If warnings appear, fix them immediately
+# 3. Run ruff and fix all issues
+ruff check --fix .
+ruff format .
+
+# 4. Verify clean state
+pytest -v  # Should show "0 warnings"
+ruff check .  # Should show "All checks passed!"

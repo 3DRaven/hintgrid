@@ -1,0 +1,30 @@
+# Example systemd timer: first run shortly after boot, then every 10 minutes
+# *after the previous run finished* (OnUnitInactiveSec). No overlap: systemd will not
+# start a second hintgrid-run.service while the first ExecStart is still running.
+#
+# Wall-clock schedule (e.g. :00, :10, :20 each hour) is commented below — use it
+# only if you need fixed clock times; overlapping ticks are still serialized by systemd.
+#
+# Install:
+#   sudo cp deploy/systemd/hintgrid-run.timer /etc/systemd/system/
+#   sudo systemctl enable --now hintgrid-run.timer
+
+[Unit]
+Description=Schedule HintGrid pipeline (10 min after each completion; first run after boot)
+Documentation=file:///opt/hintgrid/README.ru.md
+Requires=hintgrid-run.service
+
+[Timer]
+Unit=hintgrid-run.service
+# First trigger after boot (adjust if services need more time to come up).
+OnBootSec=2min
+# Next runs: 10 minutes after hintgrid-run.service last became inactive (finished).
+OnUnitInactiveSec=10min
+AccuracySec=1min
+
+# --- Optional: fixed wall-clock every 10 minutes (comment out OnBootSec / OnUnitInactiveSec above) ---
+# OnCalendar=*-*-* *:0/10:00
+# Persistent=false
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,72 @@
+# Docker Compose for HintGrid test infrastructure
+# Uses fixed ports for simplicity with parallel test execution
+# Each pytest-xdist worker uses the same containers with data isolation
+#
+# Data isolation:
+#   Named volumes store database data on the physical disk.
+#   `docker compose down --volumes` (called by testcontainers on teardown)
+#   removes all volumes, ensuring a fresh state on each test run.
+
+services:
+  hintgrid-neo4j:
+    image: neo4j:5.26.0
+    ports:
+      - "17687:7687"  # Bolt - fixed port
+      - "17474:7474"  # HTTP - fixed port
+    environment:
+      NEO4J_AUTH: neo4j/testpassword
+      NEO4J_PLUGINS: '["graph-data-science", "apoc"]'
+      NEO4J_dbms_security_procedures_unrestricted: gds.*,apoc.*
+      NEO4J_dbms_security_procedures_allowlist: gds.*,apoc.*
+      NEO4J_ACCEPT_LICENSE_AGREEMENT: "yes"
+      # Memory settings for tests (optimized for CI)
+      NEO4J_server_memory_heap_initial__size: 512m
+      NEO4J_server_memory_heap_max__size: 512m
+      NEO4J_server_memory_pagecache_size: 100m
+    volumes:
+      - neo4j-data:/data
+      - neo4j-logs:/logs
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:7474 || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  hintgrid-redis:
+    image: redis:7-alpine
+    ports:
+      - "16379:6379"  # Fixed port
+    command: redis-server --save "" --maxmemory 50mb --maxmemory-policy allkeys-lru --loglevel warning
+    # Redis is in-memory only (--save ""), tmpfs avoids disk writes entirely
+    tmpfs:
+      - /data:size=64M
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 10
+
+  hintgrid-postgres:
+    image: postgres:16-alpine
+    ports:
+      - "15432:5432"  # Fixed port
+    environment:
+      POSTGRES_USER: test
+      POSTGRES_PASSWORD: test
+      POSTGRES_DB: test
+    command: postgres -c shared_buffers=24MB -c max_connections=200 -c work_mem=1MB -c maintenance_work_mem=10MB
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test -d test"]
+      interval: 2s
+      timeout: 2s
+      retries: 10
+
+# Named volumes: stored on physical disk (/var/lib/docker/volumes/)
+# Removed automatically by `docker compose down --volumes` on test teardown
+volumes:
+  neo4j-data:
+  neo4j-logs:
+  postgres-data:

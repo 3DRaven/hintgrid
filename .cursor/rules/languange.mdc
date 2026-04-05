@@ -1,0 +1,34 @@
+---
+alwaysApply: true
+---
+# English-Only Code Policy
+
+## Always use English for everything in code:
+1. **Variable names** - Use English words only
+2. **Function names** - English verbs and nouns
+3. **Class names** - English naming conventions
+4. **Comments** - Write all comments in English
+5. **Docstrings** - All documentation in English
+6. **Log messages** - Use English for logging
+7. **Error messages** - English error text
+8. **Test names** - English test descriptions
+9. **Git commit messages** - English only
+
+## Examples:
+
+```python
+# ✅ GOOD - English everywhere
+def calculate_user_feed_score(user_id: int, post_id: int) -> float:
+    """Calculate personalized score for a post in user's feed."""
+    # Fetch user embeddings from cache
+    embedding = redis.get(f"embedding:{user_id}")
+    logger.info(f"Processing feed for user {user_id}")
+    return score
+
+# ❌ BAD - Mixed languages
+def рассчитать_оценку_поста(user_id: int, post_id: int) -> float:
+    """Вычисляет персонализированный скор"""
+    # Получаем эмбеддинги из кэша
+    embedding = redis.get(f"embedding:{user_id}")
+    logger.info(f"Обработка ленты пользователя {user_id}")
+    return score

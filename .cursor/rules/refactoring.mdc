@@ -1,0 +1,21 @@
+---
+alwaysApply: true
+---
+When planning structural changes, API migrations, or large-scale refactoring that affects multiple files or modules (e.g., >10 files or >50 occurrences), **do not perform manual updates**. Manual editing of widespread patterns is prone to human error, regression, and inconsistency.
+
+**Requirement:**
+Use **AST-based automation scripts** for mass code modifications.
+
+**Guidelines:**
+1.  **Develop a Transformation Script:** Write a Python script using the standard `ast` module (or tools like `LibCST` or `Bowler`) to parse the codebase and programmatically apply the required changes.
+2.  **Verify via AST:** The script must rely on syntax tree analysis to identify target code blocks accurately, ensuring that comments, formatting, and unrelated code remain untouched.
+3.  **Reproducibility:** Commit the transformation script to the repository (e.g., under `scripts/refactor/`) so the migration can be reviewed, tested, and re-run if necessary.
+4.  **Review Process:** Submit the script alongside the changes. Reviewers will first audit the script logic to ensure correctness before reviewing the resulting massive diff.
+
+**Benefits:**
+*   **Safety:** Guarantees that every occurrence is handled identically.
+*   **Speed:** Applies complex changes across the entire codebase instantly.
+*   **Reviewability:** Easier to review one logic file than 100 modified source files.
+
+**Example:**
+Instead of manually renaming `client.execute_labeled(...)` to `client.execute(...)` across 50 files, write a script that traverses the AST, finds `Call` nodes for `execute_labeled`, transforms arguments, and writes back the modified source.

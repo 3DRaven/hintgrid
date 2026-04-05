@@ -1,0 +1,69 @@
+---
+alwaysApply: true
+description: Documentation Code Examples Policy
+---
+
+Very important: after finishing updateing project you must always update documentation in docs/REFERENCE.ru.md
+
+## Only Database Query Languages in Documentation
+
+When writing documentation, comments, or docstrings that include code examples:
+
+### ✅ ALLOWED - Show actual database operations:
+
+**Memgraph Cypher queries:**
+```cypher
+// Find users and their communities
+MATCH (u:User)-[:BELONGS_TO]->(c:UserCommunity)
+WHERE u.id = 123
+RETURN u, c;
+
+// Generate Node2Vec embeddings
+CALL node2vec.set_embeddings(false, 1.0, 1.0, 10, 20, 16)
+YIELD nodes, embeddings
+RETURN count(nodes);
+```
+
+**PostgreSQL SQL queries:**
+```sql
+-- Get user's recent posts
+SELECT id, text, created_at 
+FROM statuses 
+WHERE account_id = 123 
+ORDER BY created_at DESC 
+LIMIT 10;
+
+-- Create index for performance
+CREATE INDEX idx_statuses_account_id ON statuses(account_id);
+```
+
+**Redis CLI commands:**
+```bash
+# Add posts to user's feed with scores
+ZADD feed:123 0.95 101 0.87 102 0.76 103
+
+# Get top 10 posts from feed
+ZREVRANGE feed:123 0 9 WITHSCORES
+
+# Set expiration (1 hour TTL)
+EXPIRE feed:123 3600
+```
+
+### ❌ FORBIDDEN - No Python code examples in documentation:
+
+### Rationale:
+- **Focus on logic**: Show WHAT the system does (queries), not HOW to call it (Python API)
+- **Language-agnostic**: Queries are useful for any implementation language
+- **Less maintenance**: Python API changes, but query logic is more stable
+- **Better understanding**: Database operations are the core business logic
+- **Single source of truth**: Python examples belong in API docs and tests, not inline comments
+
+### Core Principle:
+**Code comments and docstrings explain database operations (queries).  
+API documentation explains Python interface (separate docs).**
+
+If you need additional information about memgraph documentation you can run test_docs.py tests, they designed as `documentational` tests
+
+Important: All documentation in /docs must be on russion, all code and tests on english
+
+For README.md allowed full bash commands and other examples for application using

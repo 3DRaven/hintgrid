@@ -1,0 +1,105 @@
+version: '3.8'
+
+services:
+  # =====================================================
+  # Neo4j - Graph database
+  # =====================================================
+  neo4j:
+    image: neo4j:5.26.0
+    container_name: hintgrid-neo4j
+    environment:
+      NEO4J_AUTH: neo4j/your_password_here
+      NEO4J_PLUGINS: '["graph-data-science", "apoc"]'
+      NEO4J_dbms_security_procedures_unrestricted: gds.*,apoc.*
+      NEO4J_dbms_security_procedures_allowlist: gds.*,apoc.*
+      NEO4J_ACCEPT_LICENSE_AGREEMENT: "yes"
+      # Memory settings for production
+      NEO4J_server_memory_heap_initial__size: 4G
+      NEO4J_server_memory_heap_max__size: 8G
+      NEO4J_server_memory_pagecache_size: 4G
+    ports:
+      - "7474:7474"  # HTTP
+      - "7687:7687"  # Bolt
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+      - neo4j_import:/var/lib/neo4j/import
+      - neo4j_plugins:/plugins
+    networks:
+      - hintgrid
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:7474 || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  # =====================================================
+  # Redis - Cache for ready feeds
+  # =====================================================
+  redis:
+    image: redis:7-alpine
+    container_name: hintgrid-redis
+    command: redis-server --appendonly yes --maxmemory 2gb --maxmemory-policy allkeys-lru --loglevel warning
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - hintgrid
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 10
+
+  # =====================================================
+  # OVMS - OpenVINO Model Server for vectorization
+  # =====================================================
+  ovms:
+    image: openvino/model_server:latest
+    container_name: hintgrid-ovms
+    environment:
+      - MODEL_NAME=sentence-bert
+      - MODEL_PATH=/models/sentence-bert
+    ports:
+      - "8000:8000"  # REST API
+      - "9000:9000"  # gRPC
+    volumes:
+      - ./models:/models
+    networks:
+      - hintgrid
+    # NOTE: Download Sentence-BERT model to ./models/sentence-bert/
+    # See instructions in README.md
+
+  # =====================================================
+  # PostgreSQL (optional, if you don't have Mastodon)
+  # You can use this container for testing
+  # =====================================================
+  # postgres:
+  #   image: postgres:14-alpine
+  #   container_name: mastodon-rec-postgres
+  #   environment:
+  #     - POSTGRES_USER=mastodon
+  #     - POSTGRES_PASSWORD=mastodon_password
+  #     - POSTGRES_DB=mastodon_production
+  #   ports:
+  #     - "5432:5432"
+  #   volumes:
+  #     - postgres_data:/var/lib/postgresql/data
+  #   networks:
+  #     - mastodon-rec
+
+networks:
+  hintgrid:
+    driver: bridge
+
+volumes:
+  neo4j_data:
+  neo4j_logs:
+  neo4j_import:
+  neo4j_plugins:
+  redis_data:
+  n8n_data:
+  # postgres_data:  # Uncomment if using built-in PostgreSQL
+

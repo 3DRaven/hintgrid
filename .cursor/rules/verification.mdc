@@ -1,0 +1,167 @@
+---
+alwaysApply: true
+---
+# Test-Driven Development Policy
+
+## Always use real testcontainers instead of mocks
+
+Use testcontainers for all integrations tests
+
+## Always verify changes by running tests
+
+1. **Before completing any code change**:
+   - Run relevant tests to verify the change works
+   - Check that existing tests still pass
+   - Ensure no regressions were introduced
+
+2. **Test execution workflow**:
+   ```bash
+   # Run all tests
+   pytest
+   
+   # Run specific test file
+   pytest tests/test_analytics.py
+   
+   # Run specific test
+   pytest tests/test_analytics.py::test_node2vec_simple_graph
+   
+   # Run with markers
+   pytest -m smoke  # Quick smoke tests
+   pytest -m integration  # All integration tests
+
+
+## FORBIDDEN: Test Anti-Patterns
+
+### Never Skip Tests
+❌ `@pytest.mark.skip` - Never skip tests
+❌ `@pytest.mark.skipif(True, ...)` - Never conditionally disable
+❌ `pytest.skip("reason")` in test body
+❌ `return` before assertions to exit early
+
+Exception: Only for hardware dependencies (`@pytest.mark.skipif(not has_gpu())`)
+
+### Never Write Tests That Check Nothing
+❌ `assert True` - Always passes
+❌ `assert result` - Passes if any truthy value
+❌ `assert result is not None` - Only checks existence
+❌ `assert len(result) > 0` - Only checks non-empty
+❌ `assert result or not result` - Always true
+❌ Test with no assertions at all
+❌ Just calling a function without checking output
+
+### Never Hide Failures with Fallbacks
+❌ `try/except/pass` - Silently swallows errors
+❌ `try/except: pytest.skip()` - Converts failure to skip
+❌ `try/except: assert True` - Converts failure to pass
+❌ `except Exception: return` - Exits without failing
+❌ `except: continue` in loops - Keeps retrying
+❌ Fallback to default/dummy values on error
+
+### Never Use Infinite Retries or Timeouts
+❌ `while True: try ... break` - Retries forever
+❌ `for _ in range(1000): try ... return` - Many retries
+❌ `timeout = float('inf')` - Never times out
+❌ `time.sleep(999999)` - Effectively infinite wait
+
+### Never Make Tests Conditional
+❌ `if os.getenv("CI"): assert True else: test()` - Different behavior
+❌ `if platform.system() == "Windows": pytest.skip()` - Platform-specific
+❌ `if result: assert result.status == 200` - Only checks if exists
+❌ `if error: pass else: assert` - Ignores some cases
+
+### Never Over-Mock Integration Tests
+❌ Mocking the function being tested
+❌ Mocking database in integration test marked `@pytest.mark.integration`
+❌ Mocking all external calls when test should verify integration
+❌ `with patch('module.function'): test()` - Testing mock, not code
+
+### Examples of Forbidden Patterns
+
+```python
+# ❌ FORBIDDEN: Skipping
+@pytest.mark.skip(reason="Broken")
+def test_feature(): ...
+
+# ❌ FORBIDDEN: Empty check
+def test_feature():
+    result = feature()
+    assert True  # Always passes!
+
+# ❌ FORBIDDEN: Weak check
+def test_feature():
+    result = get_users()
+    assert result is not None  # Could be empty list!
+
+# ❌ FORBIDDEN: Hiding failure
+def test_feature():
+    try:
+        result = feature()
+        assert result == expected
+    except:
+        pass  # Test "passes" even if broken!
+
+# ❌ FORBIDDEN: Fallback to skip
+def test_feature():
+    try:
+        result = feature()
+        assert result == expected
+    except:
+        pytest.skip("Feature unavailable")  # Hides problem!
+
+# ❌ FORBIDDEN: Fallback to pass
+def test_feature():
+    try:
+        result = feature()
+        assert result.status == "ok"
+    except:
+        assert True  # Passes on error!
+
+# ❌ FORBIDDEN: Infinite retry
+def test_feature():
+    for _ in range(1000):
+        try:
+            assert feature()
+            return  # Pass on first success
+        except:
+            continue  # Keep trying
+
+# ❌ FORBIDDEN: Conditional logic
+def test_feature():
+    result = feature()
+    if os.getenv("CI"):
+        assert True  # Different in CI!
+    else:
+        assert result == expected
+
+# ❌ FORBIDDEN: Conditional assertion
+def test_feature():
+    result = api.call()
+    if result:  # Only checks if result exists!
+        assert result.status == 200
+
+# ❌ FORBIDDEN: Over-mocking integration test
+@pytest.mark.integration
+def test_database_workflow(memgraph):
+    with patch('memgraph.execute'):  # Not testing real DB!
+        result = workflow()
+        assert result
+
+# ❌ FORBIDDEN: Mocking tested function
+def test_process_data():
+    with patch('module.process_data', return_value="ok"):
+        result = process_data(data)
+        assert result == "ok"  # Testing mock, not function!
+
+# ✅ CORRECT: Proper test
+def test_feature():
+    result = feature(input_data)
+    assert result.status == "completed"
+    assert result.value == 42
+    assert len(result.items) == 3
+
+# ✅ CORRECT: Integration test with real DB
+@pytest.mark.integration
+def test_database_workflow(memgraph):
+    memgraph.execute("CREATE (:User {id: 1})")
+    result = workflow()
+    assert result.users_processed == 1

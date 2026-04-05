@@ -1,0 +1,164 @@
+---
+alwaysApply: true
+---
+## Type Hinting Guidelines
+
+This project enforces **Strict Typing** across the entire codebase, including application logic and test suites. We rely on static analysis to ensure code quality and IDE autocompletion support.
+
+### General Rules
+*   **Mandatory Signatures:** Every function, method, and class constructor must explicitly annotate all arguments and return values. Use `-> None` if nothing is returned.
+*   **No Implicit `Any`:** Avoid `Any` whenever possible. Use `Protocol`, `Union`, or `TypeVar` to define contracts strictly.
+*   **Modern Syntax:** Use modern Python 3.10+ syntax (e.g., `list[str]`, `dict[str, int]`, `str | None`) instead of deprecated `typing` imports like `List` or `Optional`.
+*   **Circular Imports:** Handle circular dependencies using `from typing import TYPE_CHECKING` and string forward references.
+
+Here are the **General Best Practices for Writing Strict Type Stubs (`.pyi`)** to ensure high code quality, security, and type safety across any Python project.
+
+***
+
+### General Stubbing Guidelines
+
+#### 1. Security & Safety First
+*   **Restrict Sensitive String Inputs:** For functions executing code, queries (SQL, Cypher, Shell), or paths, never use plain `str`. Use `LiteralString` to forbid dynamic (unsafe) string construction.
+    *   *Bad:* `def execute(query: str)`
+    *   *Good:* `def execute(query: LiteralString)`
+*   **Avoid "Stringly Typed" APIs:** If a function accepts a limited set of string values, use `Literal['value1', 'value2']` or `Enum`, not `str`.
+
+#### 2. Precision with `Any` vs `object`
+*   **Input Parameters (Contravariant):** Use `object` only when the function truly accepts *anything* and treats it as an opaque token (e.g., `isinstance(x, ...)`). For data processing, prefer `Any` or specific protocols/unions to avoid forcing users to cast types explicitly.
+*   **Return Values (Covariant):** Never return `object`. Use `Any` if the type is truly unknown, or a `bound TypeVar` if it depends on input. Returning `object` renders the result unusable without unsafe casts.
+
+#### 3. Container & Collection Types
+*   **Use Abstract Collections:** Prefer abstract base classes (`Sequence`, `Mapping`, `Iterable`) over concrete implementations (`list`, `dict`) for arguments. This allows callers to pass any compatible type (e.g., tuples, generators).
+    *   *Bad:* `def process(items: list[str])`
+    *   *Good:* `def process(items: Sequence[str])`
+*   **Immutable by Default:** Use immutable collection types (`Sequence` instead of `list`) unless the function explicitly modifies the container.
+
+#### 4. Correctness of Dunder Methods
+*   **Context Managers:** `__exit__` must always accept the three exception arguments (`type`, `value`, `traceback`) typed as `object` or `BaseException | None`.
+*   **Fluent Interfaces:** If a method returns `self` to allow chaining, annotate the return type as the class type (`"ClassName"`), not `None`.
+
+#### 5. Protocols over Concrete Imports
+*   **Avoid Private Imports:** Do not import internal/private classes from the library just to use them as types.
+*   **Use Protocols:** Define a `Protocol` (structural subtyping) that matches the required methods/attributes. This decouples the stub from implementation details and handles "duck typing" correctly.
+
+#### 6. Generics & TypeVars
+*   **Preserve Type Information:** Use `TypeVar` to link input types to return types.
+    *   *Example:* `def clone(self: T) -> T:` is better than `def clone(self) -> Any:`.
+*   **Self Type:** Use `Self` (from `typing` or `typing_extensions`) for methods returning an instance of the class (e.g., factory methods, `__enter__`).
+
+#### 7. Null Safety
+*   **Explicit Optional:** Never imply optionality. If an argument can be `None`, explicitly mark it as `Type | None`.
+*   **No Default Mutable Args:** Reflect the runtime behavior accurately. If a default is `None` but internally becomes an empty list, type the argument as `list | None = None`.
+
+Here is a summary of the common errors found in type stubs (like the one you provided) and a set of additional **Best Practices** to prevent them.
+
+### Common Errors in Stubs
+1.  **Permissive String Types:** Defining query arguments as `str | LiteralString` defeats the purpose of `LiteralString`. It effectively downgrades the check to just `str`, allowing unsafe dynamic SQL injection.
+2.  **Incorrect Return Types (Fluent Interface):** Marking methods like `Cursor.execute()` as returning `None` breaks method chaining (`cur.execute(...).fetchall()`), which is a common pattern in Python DB drivers.
+3.  **Inconsistent Data Types:** Hardcoding return types like `list[dict]` for `fetchall` while using `Iterator[tuple]` for `__iter__`. This is often incorrect because the actual return type depends on runtime configuration (e.g., `row_factory`).
+
+***
+
+### Additional Strict Typing Rules for Stubs
+
+#### 1. Enforce Safe Query Construction
+*   **Rule:** **Do not use `str`** in a Union with `LiteralString` for sensitive arguments (SQL, Shell, Cypher).
+*   **Reason:** `str` is a supertype of `LiteralString`. `LiteralString | str` simplifies to `str`, disabling strict security checks.
+*   **Correct:** `query: LiteralString` (or `LiteralString | Composable`).
+*   **Incorrect:** `query: LiteralString | str`.
+
+#### 2. Respect Fluent Interfaces
+*   **Rule:** If a method returns `self` at runtime to allow chaining, annotate the return type as `Self` (or the class name), never `None`.
+*   **Reason:** Returning `None` prevents callers from chaining methods, forcing verbose code.
+*   **Example:** `def execute(self, ...) -> Self: ...`
+
+#### 3. Handle Dynamic Return Types (Row Factories)
+*   **Rule:** If a return type depends on runtime configuration (like `row_factory`), prefer `Any` or a generic `TypeVar` over a specific concrete type like `dict` or `tuple`.
+*   **Reason:** Hardcoding `dict` makes the stub lie when the user is using default tuple rows.
+*   **Example:** `def fetchone(self) -> Any | None: ...`
+
+#### 4. Use `Self` for Context Managers
+*   **Rule:** The `__enter__` method should return `Self` (the instance type), not `Any` or a hardcoded class name if inheritance is possible.
+*   **Reason:** This ensures that subclasses inherit the correct context manager type.
+
+#### 5. Strict Parameter Collections
+*   **Rule:** For SQL parameters, use `Mapping[str, Any]` (for named params) and `Sequence[Any]` (for positional). Avoid `list` or `dict` unless mutation is required.
+*   **Reason:** This allows passing tuples, namedtuples, or other immutable mappings without type errors.
+
+### Testing Rules
+*   **Fixtures:** All `@pytest.fixture` functions must declare their return type. This is crucial for IDEs to resolve the type of the injected object in tests.
+*   **Test Functions:** All test functions must return `-> None`.
+*   **Arguments:** Always annotate test function arguments (injected fixtures) with their respective classes/types to enable IntelliSense.
+
+*Compliance is enforced via CI using `mypy` in strict mode.*
+
+`# type: ignore[import-untyped]` is strictly restricted to third-party dependencies. Internal modules must be properly typed.
+
+### Avoid `Any` and `object`
+Usage of `Any` is strongly discouraged as it effectively disables static analysis. It is permitted **only as a last resort** when strict typing is technically impossible (e.g., highly dynamic external APIs).
+
+**Avoid `object` in type annotations:** The `object` type is too permissive and defeats the purpose of type checking. Instead of `object`, use:
+- **`Protocol`** for structural typing
+- **Specific types or `Union`** when the set of possible types is known
+- **`Any`** only as an absolute last resort (and even then, prefer `Protocol`)
+
+Examples:
+- ❌ **Bad:** `def process(value: object) -> object: ...`
+- ✅ **Good:** `def process(value: str | int) -> str | int: ...`
+- ✅ **Good:** `def process(value: Processable) -> Processed: ...` (using Protocol) 
+
+### Check typing errors
+Always prefer specific types. Use ./typings as stubs and always check typing errors by mypy and pyright. `# type: ignore`, warnings disabling and ignoring, cast: is strongly discouraged.
+
+### Enforcement of Type Safety Rules
+
+The project uses strict type checking configuration to minimize the need for type bypasses:
+
+**mypy configuration:**
+- `strict = true` - enables all strict type checking options
+- `warn_unused_ignores = true` - flags unused `# type: ignore` comments as errors
+- `warn_redundant_casts = true` - warns about unnecessary `cast()` calls
+- `disallow_any_explicit = true` - prohibits explicit `Any` usage, reducing need for `cast()`
+- `disallow_any_generics = true` - prohibits `Any` in generic types
+- `disallow_untyped_calls = true` - prohibits calls to untyped functions
+- `no_implicit_optional = true` - requires explicit `Optional[T]` instead of `T = None`
+- `strict_equality = true` - prohibits comparison of incompatible types
+- `strict_optional = true` - strict checking of Optional types
+- `check_untyped_defs = true` - checks untyped function definitions
+- `no_implicit_reexport = true` - requires explicit `__all__` for re-exports
+- `disallow_untyped_decorators = true` - prohibits untyped decorators
+- `disallow_subclassing_any = true` - prohibits subclassing `Any`
+
+**pyright configuration:**
+- `typeCheckingMode = "strict"` - enables strictest type checking mode
+- `reportUnusedTypeIgnoreComment = "error"` - converts unused `# type: ignore` comments to errors
+- `reportGeneralTypeIssues = "error"` - strict type checking mode
+- `reportUnnecessaryCast = "error"` - flags unnecessary `cast()` calls as errors
+- `reportIncompatibleMethodOverride = "error"` - flags incompatible method overrides
+- `reportIncompatibleVariableOverride = "error"` - flags incompatible variable overrides
+- `reportPrivateUsage = "error"` - flags private member usage
+- `reportConstantRedefinition = "error"` - flags constant redefinition
+- `strictParameterInitialization = true` - strict parameter initialization checking
+- `strictPropertyInitialization = true` - strict property initialization checking
+- `strictListInference = true` - strict list type inference
+- `strictDictionaryInference = true` - strict dictionary type inference
+- `strictSetInference = true` - strict set type inference
+- `reportOptionalSubscript = "error"` - flags optional subscript access
+- `reportOptionalMemberAccess = "error"` - flags optional member access
+- `reportOptionalCall = "error"` - flags optional function calls
+- `reportOptionalIterable = "error"` - flags optional iterable usage
+- `reportOptionalContextManager = "error"` - flags optional context manager usage
+- `reportOptionalOperand = "error"` - flags optional operand usage
+
+**ruff configuration:**
+- `RUF100` - detects unused `# type: ignore` comments
+- `RUF` - all Ruff-specific rules for code quality
+- `PYI` - rules for `.pyi` stub files
+- `UP` - pyupgrade rules for modernizing code
+- `B` - flake8-bugbear rules for bug detection
+- `C4` - flake8-comprehensions for improving comprehensions
+- `SIM` - flake8-simplify for code simplification
+- `PIE` - flake8-pie for additional checks
+- `TCH` - flake8-type-checking for type checking improvements
+
+These settings make the use of `cast()` and `type: ignore` more visible and problematic, encouraging proper type annotations instead of workarounds. The strict configuration minimizes the need for type bypasses by catching type issues early.

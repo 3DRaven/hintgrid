@@ -1,0 +1,161 @@
+[project]
+name = "hintgrid"
+version = "0.7.3"
+description = "HintGrid - Community-centric recommendation system for Mastodon"
+requires-python = ">=3.11"
+# pyenv install 3.11
+# ~/.pyenv/versions/3.11.11/bin/python -m venv .venv
+# source .venv/bin/activate
+# pip install --upgrade pip
+# pip install -e .
+# pip install -e ".[dev,test]"
+dependencies = [
+    "neo4j>=6.1.0",
+    "redis>=7.4.0",
+    "httpx>=0.28.1",
+    "psycopg[binary,pool]>=3.3.3",
+    "pydantic>=2.12.5",
+    "pydantic-settings>=2.13.1",
+    "tenacity>=9.1.4",
+    "python-dotenv>=1.0.1",
+    "litellm>=1.83.3",
+    "typer<0.24",
+    "rich>=14.3.3",
+    "numpy>=2.4.4",
+    "scikit-learn>=1.8.0",
+    "gensim>=4.4.0",
+    "nltk>=3.9.4",
+    "psutil>=7.2.2",
+    "compress-fasttext>=0.1.5",
+    "msgspec>=0.20.0"
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.15.9",
+    "mypy>=1.20.0",
+    "pyright>=1.1.408",
+    "pytest>=9.0.2",
+    "pytest-xdist>=3.8.0",  # Parallel test execution
+    "pytest-timeout>=2.4.0",  # Test timeout protection
+    "filelock>=3.25.2",  # File locking for xdist coordination
+    "testcontainers>=4.14.2",
+    "flask>=3.1.3",
+    "requests>=2.33.1",
+    "pre-commit>=4.5.1",
+    "allpairspy>=2.5.1",
+    "types-psutil>=7.2.2.20260402",
+    "types-requests>=2.33.0.20260402",
+]
+
+[project.scripts]
+hintgrid = "hintgrid.app:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "unit: Fast unit tests without external dependencies",
+    "integration: Integration tests with containers",
+    "smoke: Fast smoke tests (critical functions)",
+    "quality: Algorithm quality tests (slow)",
+    "edge_case: Edge cases and negative tests",
+    "single_worker: Tests requiring exclusive access to shared infrastructure (no parallel workers)",
+    "slow: Tests that take noticeably longer (stress, large batches)",
+]
+addopts = [
+    "--strict-markers",
+    "-ra",
+    "--tb=short",
+]
+timeout = 300  # Default 5 minute timeout per test
+timeout_method = "thread"
+tmp_path_retention_count = 1  # Keep only the most recent session temp dir
+tmp_path_retention_policy = "failed"  # Only retain temp dirs for failed tests
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.package-dir]
+"" = "src"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["hintgrid*"]
+
+[tool.setuptools.package-data]
+hintgrid = ["py.typed"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+extend-select = [
+    "RUF100",  # неиспользуемые type: ignore
+    "RUF",     # все правила Ruff
+    "PYI",     # правила для .pyi стаб-файлов
+    "UP",      # pyupgrade - модернизация кода
+    "B",       # flake8-bugbear - обнаружение багов
+    "C4",      # flake8-comprehensions - улучшение comprehensions
+    "SIM",     # flake8-simplify - упрощение кода
+    "PIE",     # flake8-pie - дополнительные проверки
+    "TCH",     # flake8-type-checking - проверки типизации
+]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+disallow_any_explicit = true
+disallow_any_generics = true
+# Note: There is no built-in option to disallow 'object' type, but it is discouraged
+# in favor of Protocol, Union, or specific types. See .cursor/rules/typing.mdc
+# Запрет вызовов нетипизированных функций
+disallow_untyped_calls = true
+# Запрет неявных Optional (требует явного Optional[T] вместо T = None)
+no_implicit_optional = true
+# Строгая проверка равенства (запрещает сравнение разных типов)
+strict_equality = true
+# Строгая проверка Optional типов
+strict_optional = true
+# Проверка нетипизированных определений
+check_untyped_defs = true
+# Запрет неявного реэкспорта (требует явного __all__)
+no_implicit_reexport = true
+# Запрет нетипизированных декораторов
+disallow_untyped_decorators = true
+# Запрет подклассов Any
+disallow_subclassing_any = true
+# Примечание: Прямого запрета на 'object' нет, но использование 'object' в типах
+# не рекомендуется. Предпочтительны: Protocol, Union, или конкретные типы.
+# См. .cursor/rules/typing.mdc для деталей
+mypy_path = "typings"
+
+[[tool.mypy.overrides]]
+module = ["gensim.*", "nltk.*", "compress_fasttext.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["pydantic_settings.*", "pydantic.*"]
+disallow_any_explicit = false
+
+[[tool.mypy.overrides]]
+module = ["hintgrid.config"]
+disallow_any_explicit = false
+
+[[tool.mypy.overrides]]
+module = ["litellm", "gensim.*"]
+disallow_any_explicit = false
+
+[[tool.mypy.overrides]]
+module = ["typings.*"]
+disallow_any_explicit = false
+
+
+

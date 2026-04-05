@@ -1,0 +1,8 @@
+---
+name: development
+description: About acces to neo4j documentation
+---
+For exploring the documentation, use the tests in `tests/examples/docs`. These tests are designed to run against a real neo4j instance and display the actual available documentation directly from the running system.
+
+All fixtures must be used from tests/conftest.py and placed to it
+

@@ -1,0 +1,18 @@
+---
+alwaysApply: true
+---
+1.  **No Mocks for Persistence:** Use `testcontainers` for **PostgreSQL**, **Neo4j**, and **Redis** interactions. Mocks are forbidden for DB layers.
+2.  **Coverage Gate:** CI must fail if total coverage drops below **95%**. Use `--cov-fail-under=95`.
+3.  **Branch Coverage:** Enable `--cov-branch` to ensure all `if/else` logic paths are tested against real DB states.
+4.  **Prioritize Integration/E2E tests** using Testcontainers over Unit tests to ensure reliability in real-world scenarios.
+    *   **a. Integration Tests:** Must cover all interactions with external libraries, databases, and system components. Since mocking library calls can lead to false positives, validation against real containerized services (Postgres, Neo4j, Redis) is mandatory.
+    *   **b. Unit Tests:** Are strictly limited to pure business logic and complex internal algorithms implemented directly within the application code. Do not use unit tests for code that primarily orchestrates external dependencies.
+5.  **Refactoring Mandate for Failing Tests:** If a test fails in a file exceeding 500 lines of code, you are strictly required to refactor the test suite when you fix the bug, and refactor project source code files when you explore them. Split the monolithic test/project file into a dedicated sub-module (directory) containing smaller, focused files (under 500 LOC each). This ensures long-term maintainability and easier debugging.
+6.  **Parallel Execution:** Always run tests in parallel mode using 8 cores (e.g., `pytest -n 8`).
+7.  **No Mocks in Integration:** Mocks are strictly prohibited in integration tests.
+8.  **No Error Suppression:** **Never suppress exceptions** in tests (e.g., empty `try...except`, `pytest.raises` without assertions, or ignoring stderr). Tests must fail loudly and explicitly when an error occurs or an unexpected condition is met. "Flaky" tests must be fixed, not silenced.
+
+**Required Command:**
+```bash
+pytest -n 8 --cov=src --cov-branch --cov-report=term-missing --cov-fail-under=95
+```

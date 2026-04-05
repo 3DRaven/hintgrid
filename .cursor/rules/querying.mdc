@@ -1,0 +1,92 @@
+---
+alwaysApply: true
+---
+Here is a concise set of **Best Practices** for query handling in Python, focusing on security and type safety. You can include this in your project's documentation or coding guidelines.
+
+### Query Construction & Type Safety Rules
+
+1.  **Never Use F-strings for Values**
+    *   **Bad:** `query = f"SELECT * FROM users WHERE id = {user_id}"` (Vulnerable to SQL Injection).
+    *   **Good:** Use database parameters (placeholders).
+        *   **Neo4j:** `$param_name` in Cypher, pass `dict` to `session.run`.
+        *   **Postgres:** `%s` or `%(name)s`, pass `tuple` or `dict` to `cursor.execute`.
+
+2.  **Use `LiteralString` for Queries**
+    *   Query strings should be compile-time constants (string literals).
+    *   Define queries as static strings or constructing them only from other `LiteralString` fragments.
+    *   This satisfies strict type checkers (`mypy`, `pyright`) without requiring unsafe `cast`.
+
+3.  **Strict Type Annotations**
+    *   Annotate query parameters as `LiteralString` instead of `str` where applicable.
+    *   This enforces the separation of code (SQL/Cypher) and data (parameters).
+
+4.  **Examples**
+
+    **Neo4j (Cypher):**
+    ```python
+    # ✅ CORRECT
+    query = "MATCH (n:User {name: $name}) RETURN n"
+    session.run(query, {"name": user_input})
+
+    # ❌ INCORRECT
+    session.run(f"MATCH (n:User {{name: '{user_input}'}}) RETURN n")
+    ```
+
+    **PostgreSQL (Psycopg):**
+    ```python
+    # ✅ CORRECT
+    sql = "SELECT * FROM posts WHERE id = %s AND active = %s"
+    cursor.execute(sql, (post_id, True))
+
+    # ❌ INCORRECT
+    cursor.execute(f"SELECT * FROM posts WHERE id = {post_id}")
+    ```
+
+Here are the **Best Practices** for handling large datasets with streaming in Neo4j and PostgreSQL.
+
+### Data Streaming & Batch Processing Rules
+
+1.  **Neo4j: Avoid SKIP/LIMIT for Large Offsets**
+    *   **Bad:** Using `SKIP $offset LIMIT $limit` for deep pagination (e.g., offset > 10,000). Performance degrades linearly because the database must process and discard skipped rows.
+    *   **Good (Streaming):** Simply iterate over the result of `session.run()` without `LIMIT`. The Bolt driver handles streaming and buffering automatically.
+    *   **Good (Batching):** Use **Keyset Pagination** (Seek Method) if client-side batching is required. Query by ID range: `WHERE n.id > $last_seen_id ORDER BY n.id LIMIT $batch_size`.
+
+2.  **PostgreSQL: Use Server-Side Cursors**
+    *   **Why:** Standard `cursor.execute()` may fetch *all* rows into client RAM, causing Out-Of-Memory (OOM) errors on large tables.
+    *   **How:** Use named cursors in `psycopg` to stream results row-by-row or in small chunks from the server.
+    *   **Requirement:** Named cursors must be used within a transaction block (`with conn: ...`).
+
+3.  **Code Examples**
+
+    **Neo4j Streaming (Python Driver):**
+    ```python
+    # ✅ CORRECT: Natural Streaming
+    # The driver pulls records lazily as you iterate.
+    with driver.session() as session:
+        result = session.run("MATCH (p:Post) RETURN p.text")
+        for record in result:
+            process(record)
+    ```
+
+    **PostgreSQL Streaming (Server-Side Cursor):**
+    ```python
+    # ✅ CORRECT: Server-Side Cursor
+    # 'name' argument forces server-side cursor creation.
+    with psycopg.connect(DSN) as conn:
+        with conn.cursor(name="processing_cursor") as cur:
+            cur.itersize = 2000  # Fetch 2000 rows at a time
+            cur.execute("SELECT text FROM large_table")
+            for row in cur:
+                process(row)
+    ```
+
+    **Neo4j Batch Updates (APOC):**
+    *   For massive write operations, avoid round-trips to Python. Use `apoc.periodic.iterate` to handle batching entirely on the server side.
+    ```cypher
+    // ✅ CORRECT: Server-side batch update
+    CALL apoc.periodic.iterate(
+      "MATCH (n:User) RETURN n",
+      "SET n.processed = true",
+      {batchSize: 10000}
+    )
+    ```
