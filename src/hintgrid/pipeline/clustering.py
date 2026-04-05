@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import re
 import uuid
-from typing import TYPE_CHECKING, LiteralString, cast
+from typing import TYPE_CHECKING, LiteralString
 
 if TYPE_CHECKING:
     from hintgrid.clients.neo4j import Neo4jClient, Neo4jValue
@@ -245,14 +245,13 @@ def run_user_clustering(
         yield_fragment = leiden_write_yield_clause(
             extended=settings.leiden_diagnostics_enabled,
         )
-        user_leiden_cypher = cast(
-            "LiteralString",
+        user_leiden_cypher: LiteralString = (
             "CALL gds.leiden.write('__graph_name__', {"
             "  writeProperty: 'cluster_id',"
             "  gamma: $gamma,"
             "  maxLevels: $max_levels,"
             "  relationshipWeightProperty: 'weight'"
-            "}) " + yield_fragment,
+            "}) " + yield_fragment
         )
 
         # Run Leiden on projected graph
@@ -385,14 +384,13 @@ def run_post_clustering(
         post_yield_fragment = leiden_write_yield_clause(
             extended=settings.leiden_diagnostics_enabled,
         )
-        post_leiden_cypher = cast(
-            "LiteralString",
+        post_leiden_cypher: LiteralString = (
             "CALL gds.leiden.write('__graph_name__', {"
             "  writeProperty: 'cluster_id',"
             "  relationshipWeightProperty: 'weight',"
             "  gamma: $gamma,"
             "  maxLevels: $max_levels"
-            "}) " + post_yield_fragment,
+            "}) " + post_yield_fragment
         )
 
         # Run Leiden on similarity graph
