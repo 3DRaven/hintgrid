@@ -1018,10 +1018,9 @@ def print_post_info_table(
 
     text = post_info.get("text")
     if text:
-        preview = text if len(text) <= 400 else text[:397] + "..."
-        table.add_row("Text preview", preview)
+        table.add_row("Text", str(text))
     else:
-        table.add_row("Text preview", "[dim]—[/dim]")
+        table.add_row("Text", "[dim]—[/dim]")
 
     created_pg = post_info.get("created_at_pg")
     if created_pg is not None:
