@@ -243,8 +243,9 @@ def test_community_similarity(
         {"user": "User", "uc": "UserCommunity"},
     )
 
-    # Run community similarity
-    compute_community_similarity(neo4j, settings)
+    # Run community similarity (force enabled — env may set HINTGRID_COMMUNITY_SIMILARITY_ENABLED=false)
+    test_settings = settings.model_copy(update={"community_similarity_enabled": True})
+    compute_community_similarity(neo4j, test_settings)
 
     # Verify SIMILAR_COMMUNITY relationships were created
     result = neo4j.execute_and_fetch_labeled(

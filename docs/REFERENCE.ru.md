@@ -310,7 +310,7 @@ OPTIONS {
 - `leiden_max_levels` — максимум уровней алгоритма Leiden.
 - `leiden_diagnostics` (`HINTGRID_LEIDEN_DIAGNOSTICS`) — при включении в журнал (INFO) пишется одна JSON-строка с: агрегатами по рёбрам (`INTERACTS_WITH` или `SIMILAR_TO`: число рёбер, сумма и перцентили веса, перцентили исходящей степени узлов, число узлов без исходящих рёбер); параметрами `leiden_resolution` и `leiden_max_levels`; подсказкой вида `leiden_resolution/weight_sum` (для сопоставления с документацией Neo4j GDS: взвешенный граф нормализует gamma на сумму весов рёбер); результатом одного вызова `gds.leiden.write` — в том числе `ranLevels`, `didConverge`, `modularities`, `communityDistribution`. Полная карта `communityDistribution` дополнительно дублируется на уровне DEBUG.
 - `singleton_collapse_enabled` (`HINTGRID_SINGLETON_COLLAPSE_ENABLED`) — после записи Leiden в свойство `cluster_id` узлы, чей `cluster_id` встречается ровно у одного узла (кластер размера 1), получают единый зарезервированный `noise_community_id`. Переназначение — один проход Cypher: группировка по `cluster_id`, фильтр «размер кластера = 1», `UNWIND` и `SET` (без второго полного сканирования по каждому `cluster_id` и без `apoc.periodic.iterate` на этом шаге). Затем материализация `UserCommunity`/`PostCommunity` и `BELONGS_TO` батчами через `apoc.periodic.iterate` (как раньше).
-- `singleton_collapse_in_transactions_of` (`HINTGRID_SINGLETON_COLLAPSE_IN_TRANSACTIONS_OF`) — `0`: одна транзакция Cypher без отдельного предварительного `COUNT` (один проход агрегации + `SET`). Положительное значение (по умолчанию `100000`): отдельного `COUNT` тоже нет — после `UNWIND` подзапрос `CALL { WITH * … SET … } IN TRANSACTIONS OF … ROWS` (Neo4j 5+; импорт во вложенный `CALL` через `WITH *`, без параметризованных лейблов), чтобы на очень больших графах постов ограничить размер одной транзакции.
+- `singleton_collapse_in_transactions_of` (`HINTGRID_SINGLETON_COLLAPSE_IN_TRANSACTIONS_OF`) — `0`: одна транзакция Cypher без отдельного предварительного `COUNT` (один проход агрегации + `SET`). Положительное значение (по умолчанию `100000`): отдельного `COUNT` тоже нет — после `UNWIND` подзапрос `CALL (*) { … SET … } IN TRANSACTIONS OF … ROWS` (Neo4j 5.23+; импорт переменных внешней строки через scope clause `(*)`, без параметризованных лейблов), чтобы на очень больших графах постов ограничить размер одной транзакции.
 - `noise_community_id` (`HINTGRID_NOISE_COMMUNITY_ID`) — значение `cluster_id` для «корзины» одиночных кластеров; совпадает с будущим `UserCommunity.id` / `PostCommunity.id` для этой корзины. Не должен быть `0` (ноль зарезервирован для сценария «нет рёбер в графе взаимодействий/похожести»). Пересборка `INTERESTED_IN`, персональная и публичная лента, serendipity и проекция для `gds.nodeSimilarity` по сообществам исключают этот id, чтобы кластер-шум не смешивал сигналы.
 
 **Пример: число кластеров размера 1 по `cluster_id` у постов (после Leiden):**
@@ -495,38 +495,51 @@ WITH p,
 **Назначение**: Замена случайной серендипити на рекомендации на основе перекрытия сообществ.
 
 **Характеристики:**
-- **Алгоритм**: Node Similarity (Jaccard) на графе User → UserCommunity
+- **Алгоритм**: Node Similarity (Jaccard) по **общим участникам** между узлами `UserCommunity`
+- **Доменный граф**: `(User)-[:BELONGS_TO]->(UserCommunity)` — как в операционной модели
 - **Провайдер**: Neo4j GDS
-- **Связи**: `SIMILAR_COMMUNITY` между UserCommunity узлами
+- **Связи**: `SIMILAR_COMMUNITY` между узлами `UserCommunity` (вес — score сходства)
+- **Посты и топики**: сходство **постов** строится отдельно (эмбеддинги, `SIMILAR_TO`, Leiden для `PostCommunity`); **Node Similarity по графу Post ↔ PostCommunity** в приложении не используется — не путать с этим шагом
 
 **Как работает:**
-1. Проецируется bipartite граф User → UserCommunity (BELONGS_TO)
-2. Запускается `gds.nodeSimilarity` для вычисления Jaccard similarity между UserCommunity
-3. Создаются связи `SIMILAR_COMMUNITY` с score (0.0-1.0)
+1. В каталог GDS попадает **двудольная проекция** того же `BELONGS_TO`, но рёбра для GDS задаются как **UserCommunity → User** (`source = id(uc)`, `target = id(u)` в `rel_query` для `gds.graph.project.cypher`). Так **первая доля** графа в смысле GDS — это `UserCommunity`, и Jaccard считается между племенами по пересечению множеств пользователей. Если бы в проекции оставить направление User → UserCommunity, Node Similarity сравнивал бы **пользователей** по пересечению племён, а не племена между собой — связи `SIMILAR_COMMUNITY` между `UserCommunity` не появились бы.
+2. Запускается `gds.nodeSimilarity.write` для записи пар похожих `UserCommunity` и веса
+3. Создаются связи `SIMILAR_COMMUNITY` с score (0.0–1.0)
 4. При серендипити: если UserCommunity 1 похожа на UserCommunity 2, и UC2 интересуется PostCommunity X, то UC1 получает рекомендации из PC X
 
-**Пример вычисления сходства:**
+**Пример вычисления сходства (согласован с `gds.graph.project.cypher` в приложении):**
 ```cypher
-// Имя графа зависит от neo4j_worker_label:
-// - Если worker_label задан: '{worker_label}-uc-similarity'
-// - Если worker_label не задан: 'uc-similarity'
-CALL gds.graph.project(
-  'uc-similarity',  // или '{worker_label}-uc-similarity'
-  ['User', 'UserCommunity'],
-  {BELONGS_TO: {orientation: 'UNDIRECTED'}}
+// Имя графа в каталоге GDS:
+// - без worker: 'uc-similarity'
+// - с neo4j_worker_label: '{worker_label}-uc-similarity'
+// $noise — зарезервированный noise_community_id (исключается из узлов сообществ)
+
+CALL gds.graph.project.cypher(
+  'uc-similarity',
+  'MATCH (u:User) RETURN id(u) AS id
+   UNION
+   MATCH (uc:UserCommunity) WHERE uc.id <> $noise RETURN id(uc) AS id',
+  'MATCH (u:User)-[:BELONGS_TO]->(uc:UserCommunity)
+   WHERE uc.id <> $noise
+   RETURN id(uc) AS source, id(u) AS target'
 );
 
 CALL gds.nodeSimilarity.write('uc-similarity', {
   writeRelationshipType: 'SIMILAR_COMMUNITY',
   writeProperty: 'score',
   topK: 5,
-  similarityCutoff: 0.0  // Включает все пары, даже с нулевым сходством
+  similarityCutoff: 0.0
 });
+
+CALL gds.graph.drop('uc-similarity');
 ```
 
+Упрощённый вариант `CALL gds.graph.project(..., { BELONGS_TO: { orientation: 'UNDIRECTED' } })` в документации GDS встречается как иллюстрация; **в HintGrid он не используется** — ориентация рёбер в проекции должна явно ставить `UserCommunity` в роль исхода, иначе меняется набор узлов, между которыми пишется сходство.
+
 **Важно:**
-- При использовании `neo4j_worker_label` имя графа становится `{worker_label}-uc-similarity` для изоляции графов в multi-worker режиме
-- `similarityCutoff: 0.0` включает все пары сообществ в топ-K, даже с нулевым сходством (полезно для серендипити)
+- При использовании `neo4j_worker_label` имя графа в каталоге GDS становится `{worker_label}-uc-similarity` (изоляция при параллельных тестах)
+- Неверные `source`/`target` в `rel_query` (например User → UserCommunity) приводят к сравнению **User** вместо **UserCommunity** — регрессия: нет рёбер `SIMILAR_COMMUNITY` между племенами
+- `similarityCutoff: 0.0` включает в топ-K и пары с нулевым сходством (полезно для серендипити)
 
 **Использование в серендипити:**
 ```cypher

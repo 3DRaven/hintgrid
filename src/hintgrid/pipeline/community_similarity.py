@@ -48,9 +48,12 @@ def compute_community_similarity(
         f"MATCH (u:{user_lab}) RETURN id(u) AS id "
         f"UNION MATCH (uc:{uc_lab}) WHERE uc.id <> {noise} RETURN id(uc) AS id"
     )
+    # Project UC -> User so the bipartite "first node set" is UserCommunity.
+    # GDS Node Similarity compares nodes with outgoing edges and writes pairs from
+    # that set; User->UC would compare Users instead of communities.
     rel_query = (
         f"MATCH (u:{user_lab})-[:BELONGS_TO]->(uc:{uc_lab}) WHERE uc.id <> {noise} "
-        f"RETURN id(u) AS source, id(uc) AS target"
+        f"RETURN id(uc) AS source, id(u) AS target"
     )
     neo4j.execute(
         "CALL gds.graph.project.cypher($graph_name, $node_query, $rel_query)",
