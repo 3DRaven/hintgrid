@@ -360,6 +360,38 @@ def execute_get_user_info(
     return _run_with_app(overrides, verbose, GetUserInfoHandler)
 
 
+def execute_get_post_info(
+    overrides: dict[str, object],
+    post_ref: str,
+    verbose: bool,
+) -> int:
+    """Execute the 'get-post-info' command."""
+
+    class GetPostInfoHandler(CommandHandler):
+        @staticmethod
+        def execute(app: HintGridApp) -> int:
+            from hintgrid.cli.console import print_post_info_table
+            from hintgrid.pipeline.post_info import get_extended_post_info
+
+            resolved, resolve_err = app.postgres.resolve_status_id(post_ref)
+            if resolve_err is not None:
+                print_error(resolve_err)
+                return EXIT_ERROR
+            if resolved is None:
+                print_error("Post not found")
+                return EXIT_ERROR
+
+            post_info = get_extended_post_info(app.neo4j, app.postgres, resolved)
+            if post_info is None:
+                print_error("Post not found in graph (load posts first)")
+                return EXIT_ERROR
+
+            print_post_info_table(post_info)
+            return EXIT_OK
+
+    return _run_with_app(overrides, verbose, GetPostInfoHandler)
+
+
 def execute_validate(
     overrides: dict[str, object],
     verbose: bool,

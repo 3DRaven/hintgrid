@@ -293,6 +293,12 @@ Resolve user id from address:
 hintgrid get-user-info @username@mastodon.social
 ```
 
+Post diagnostics (URL, public id from `/statuses/...`, or internal status id from DB):
+
+```bash
+hintgrid get-post-info "https://example.com/users/name/statuses/1234567890"
+```
+
 ## Test mode (full scenarios)
 
 Full scenarios for testing and experiments without affecting production data.

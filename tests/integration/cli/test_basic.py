@@ -418,6 +418,61 @@ def test_cli_get_user_info(
 
 
 @pytest.mark.integration
+def test_cli_get_post_info(
+    monkeypatch: pytest.MonkeyPatch,
+    docker_compose: DockerComposeInfo,
+    neo4j: Neo4jClient,
+    fasttext_embedding_service: EmbeddingServiceConfig,
+    sample_data_for_cli: dict[str, list[int]],
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    worker_id: str,
+    settings: HintGridSettings,
+) -> None:
+    """Test 'hintgrid get-post-info' command."""
+    log_file = tmp_path / "get_post_info.log"
+    test_settings = set_cli_env(
+        monkeypatch,
+        docker_compose,
+        fasttext_embedding_service,
+        log_file,
+        worker_id,
+        settings,
+    )
+    monkeypatch.setattr(app_module, "HintGridSettings", lambda: test_settings)
+
+    exit_code = run_cli(monkeypatch, ["run", "--dry-run"])
+    assert exit_code == 0
+
+    exit_code = run_cli(monkeypatch, ["get-post-info", "1"])
+    assert exit_code == 0
+    output = capsys.readouterr().out
+    assert "Post Information" in output
+    assert "999999001" in output
+
+    exit_code = run_cli(monkeypatch, ["get-post-info", "999999001"])
+    assert exit_code == 0
+    output = capsys.readouterr().out
+    assert "Post Information" in output
+
+    exit_code = run_cli(
+        monkeypatch,
+        [
+            "get-post-info",
+            "https://mastodon.test/users/alice/statuses/999999001",
+        ],
+    )
+    assert exit_code == 0
+    output = capsys.readouterr().out
+    assert "Post Information" in output
+
+    exit_code = run_cli(monkeypatch, ["get-post-info", "999999999999999999"])
+    assert exit_code == 1
+    err = capsys.readouterr().err
+    assert "not found" in err.lower() or "Post not found" in err
+
+
+@pytest.mark.integration
 def test_cli_run_fasttext_quantize_disabled(
     monkeypatch: pytest.MonkeyPatch,
     docker_compose: DockerComposeInfo,

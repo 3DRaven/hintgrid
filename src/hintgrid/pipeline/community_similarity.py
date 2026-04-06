@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, LiteralString
 
 if TYPE_CHECKING:
     from hintgrid.clients.neo4j import Neo4jClient
@@ -14,6 +14,11 @@ from hintgrid.pipeline.clustering import validate_gds_name
 from hintgrid.utils.coercion import coerce_int
 
 logger = logging.getLogger(__name__)
+
+_PROJECTION_NODE_COUNT: LiteralString = (
+    "RETURN count { MATCH (u:__user__) } + "
+    "count { MATCH (uc:__uc__) WHERE uc.id <> $noise } AS total"
+)
 
 
 def compute_community_similarity(
@@ -34,16 +39,29 @@ def compute_community_similarity(
     base_name = "uc-similarity"
     similarity_graph_name = f"{neo4j.worker_label}-{base_name}" if neo4j.worker_label else base_name
 
+    validate_gds_name(similarity_graph_name)
+    noise = settings.noise_community_id
+    projection_rows = neo4j.execute_and_fetch_labeled(
+        _PROJECTION_NODE_COUNT,
+        {"user": "User", "uc": "UserCommunity"},
+        {"noise": noise},
+    )
+    projection_total = coerce_int(projection_rows[0].get("total", 0)) if projection_rows else 0
+    if projection_total == 0:
+        logger.info(
+            "No users or non-noise UserCommunity nodes; skipping community similarity "
+            "(GDS projection would be empty)"
+        )
+        return
+
     with contextlib.suppress(Exception):
         neo4j.execute(
             "CALL gds.graph.drop($graph_name) YIELD graphName",
             {"graph_name": similarity_graph_name},
         )
 
-    validate_gds_name(similarity_graph_name)
     user_lab = neo4j.label("User")
     uc_lab = neo4j.label("UserCommunity")
-    noise = settings.noise_community_id
     node_query = (
         f"MATCH (u:{user_lab}) RETURN id(u) AS id "
         f"UNION MATCH (uc:{uc_lab}) WHERE uc.id <> {noise} RETURN id(uc) AS id"

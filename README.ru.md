@@ -284,6 +284,12 @@ hintgrid clean
 hintgrid get-user-info @username@mastodon.social
 ```
 
+Диагностика поста (URL, публичный id из `/statuses/...` или internal id из БД):
+
+```bash
+hintgrid get-post-info "https://example.com/users/name/statuses/1234567890"
+```
+
 ## Тестовый режим (полные сценарии)
 
 Ниже приведены полные сценарии для тестирования и экспериментов без влияния на production данные.

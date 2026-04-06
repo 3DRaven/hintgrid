@@ -675,6 +675,88 @@ class PostgresClient(AbstractContextManager["PostgresClient"]):
             except (TypeError, ValueError):
                 return None
 
+    def resolve_status_id(self, raw: str) -> tuple[int | None, str | None]:
+        """Resolve a post reference to internal ``statuses.id``.
+
+        Public web/ActivityPub ids in URLs usually differ from ``statuses.id``
+        (snowflake). Resolution uses primary key when unambiguous, otherwise
+        ``uri LIKE`` with a parameterized pattern.
+
+        Returns:
+            ``(status_id, None)`` on success, or ``(None, error_message)``.
+        """
+        from hintgrid.utils.status_reference import parse_post_reference
+
+        parsed = parse_post_reference(raw)
+        if parsed is None:
+            return (None, "Empty post reference")
+        is_digits_only, pk_candidate, uri_pattern = parsed
+
+        query_by_pk = """
+            SELECT id
+            FROM statuses
+            WHERE id = %(id)s
+              AND deleted_at IS NULL
+            LIMIT 1;
+        """
+        query_by_uri = """
+            SELECT id
+            FROM statuses
+            WHERE uri LIKE %(pat)s
+              AND deleted_at IS NULL
+            LIMIT 2;
+        """
+        with self._pool.connection() as conn, conn.cursor(row_factory=dict_row) as cursor:
+            if is_digits_only and pk_candidate is not None:
+                cursor.execute(query_by_pk, {"id": pk_candidate})
+                row = cursor.fetchone()
+                if row is not None and row.get("id") is not None:
+                    try:
+                        return (coerce_int(row["id"], field="statuses.id", strict=True), None)
+                    except (TypeError, ValueError):
+                        pass
+                cursor.execute(query_by_uri, {"pat": uri_pattern})
+                rows = cursor.fetchall()
+                if not rows:
+                    return (None, "Post not found")
+                if len(rows) > 1:
+                    return (None, "Multiple posts match this reference; use a more specific URL")
+                rid = rows[0].get("id")
+                if rid is None:
+                    return (None, "Post not found")
+                try:
+                    return (coerce_int(rid, field="statuses.id", strict=True), None)
+                except (TypeError, ValueError):
+                    return (None, "Post not found")
+            cursor.execute(query_by_uri, {"pat": uri_pattern})
+            rows = cursor.fetchall()
+            if not rows:
+                return (None, "Post not found")
+            if len(rows) > 1:
+                return (None, "Multiple posts match this reference; use a more specific URL")
+            rid = rows[0].get("id")
+            if rid is None:
+                return (None, "Post not found")
+            try:
+                return (coerce_int(rid, field="statuses.id", strict=True), None)
+            except (TypeError, ValueError):
+                return (None, "Post not found")
+
+    def fetch_status_for_info(self, status_id: int) -> dict[str, object] | None:
+        """Load a single status row for CLI display."""
+        query = """
+            SELECT id, account_id, uri, url, text, language, visibility,
+                   reblog_of_id, in_reply_to_id, created_at, sensitive
+            FROM statuses
+            WHERE id = %(id)s
+              AND deleted_at IS NULL
+            LIMIT 1;
+        """
+        with self._pool.connection() as conn, conn.cursor(row_factory=dict_row) as cursor:
+            cursor.execute(query, {"id": status_id})
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
     def fetch_account_info(self, account_ids: list[int]) -> dict[int, dict[str, str | None]]:
         """Fetch account information (username, domain) for given account IDs.
 

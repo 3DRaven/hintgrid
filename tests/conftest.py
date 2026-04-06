@@ -1145,6 +1145,12 @@ def sample_data_for_cli(
         cur.execute("UPDATE statuses SET deleted_at = NOW() WHERE id = 4;")
 
         cur.execute("""
+            UPDATE statuses
+            SET uri = 'https://mastodon.test/users/alice/statuses/999999001'
+            WHERE id = 1;
+        """)
+
+        cur.execute("""
             INSERT INTO favourites (id, account_id, status_id)
             VALUES
                 (1, 102, 1),

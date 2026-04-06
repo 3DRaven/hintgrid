@@ -444,35 +444,51 @@ class Neo4jClient(AbstractContextManager["Neo4jClient"]):
             return
 
         if settings.similarity_pruning == "partial":
-            self.execute_labeled(
-                "MATCH (p:__post__)-[r:SIMILAR_TO]->() WHERE r.weight < $threshold DELETE r",
-                {"post": "Post"},
-                {"threshold": settings.prune_similarity_threshold},
+            partial_iterate: LiteralString = (
+                "MATCH (p:__post__)-[r:SIMILAR_TO]->() "
+                "WHERE r.weight < $threshold RETURN id(r) AS rid"
+            )
+            self._delete_similar_to_by_rel_id_batches(
+                partial_iterate,
+                settings.apoc_batch_size,
+                params={"threshold": settings.prune_similarity_threshold},
+                log_label="SIMILAR_TO partial pruning",
             )
             return
 
         if settings.similarity_pruning == "temporal":
-            self.execute_labeled(
+            temporal_iterate: LiteralString = (
                 "MATCH (p:__post__)-[r:SIMILAR_TO]->() "
                 "WHERE p.createdAt < datetime() - duration({days: $days}) "
-                "DELETE r",
-                {"post": "Post"},
-                {"days": settings.prune_days},
+                "RETURN id(r) AS rid"
+            )
+            self._delete_similar_to_by_rel_id_batches(
+                temporal_iterate,
+                settings.apoc_batch_size,
+                params={"days": settings.prune_days},
+                log_label="SIMILAR_TO temporal pruning",
             )
             return
 
         logger.info("Similarity pruning disabled (strategy=%s)", settings.similarity_pruning)
 
-    def delete_all_similar_to_relationships(self, batch_size: int) -> None:
-        """Delete all SIMILAR_TO edges using apoc.periodic.iterate.
+    def _delete_similar_to_by_rel_id_batches(
+        self,
+        iterate_query: LiteralString,
+        batch_size: int,
+        *,
+        params: Mapping[str, Neo4jParameter] | None = None,
+        log_label: str = "SIMILAR_TO batch delete",
+    ) -> None:
+        """Delete SIMILAR_TO edges in batches via ``apoc.periodic.iterate``.
 
-        Avoids a single large DELETE transaction that can exceed
-        ``dbms.memory.transaction.total.max`` on graphs with many edges.
+        ``iterate_query`` must ``RETURN id(r) AS rid`` for each relationship to
+        remove. The action phase deletes by internal id to bound transaction
+        memory (same pattern as aggressive pruning).
         """
         if batch_size < 1:
             raise ValueError(f"batch_size must be >= 1, got {batch_size}")
 
-        iterate_query: LiteralString = "MATCH (p:__post__)-[r:SIMILAR_TO]->() RETURN id(r) AS rid"
         action_query: LiteralString = (
             "UNWIND $_batch AS row "
             "MATCH (p:__post__)-[r:SIMILAR_TO]->() WHERE id(r) = row.rid "
@@ -485,19 +501,35 @@ class Neo4jClient(AbstractContextManager["Neo4jClient"]):
             batch_size=batch_size,
             parallel=False,
             batch_mode="BATCH",
+            params=params,
         )
         failed = coerce_int(result.get("failedOperations", 0))
         if failed > 0:
             logger.warning(
-                "SIMILAR_TO bulk delete had failures: %s",
+                "%s had failures: %s",
+                log_label,
                 result.get("errorMessages", []),
             )
         logger.info(
-            "SIMILAR_TO bulk delete: batches=%s total=%s committed=%s failed=%s",
+            "%s: batches=%s total=%s committed=%s failed=%s",
+            log_label,
             coerce_int(result.get("batches", 0)),
             coerce_int(result.get("total", 0)),
             coerce_int(result.get("committedOperations", 0)),
             failed,
+        )
+
+    def delete_all_similar_to_relationships(self, batch_size: int) -> None:
+        """Delete all SIMILAR_TO edges using apoc.periodic.iterate.
+
+        Avoids a single large DELETE transaction that can exceed
+        ``dbms.memory.transaction.total.max`` on graphs with many edges.
+        """
+        iterate_query: LiteralString = "MATCH (p:__post__)-[r:SIMILAR_TO]->() RETURN id(r) AS rid"
+        self._delete_similar_to_by_rel_id_batches(
+            iterate_query,
+            batch_size,
+            log_label="SIMILAR_TO bulk delete",
         )
 
     def detach_delete_all_nodes(

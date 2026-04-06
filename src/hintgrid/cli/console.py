@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     from hintgrid.clients.neo4j import Neo4jValue
     from hintgrid.config import HintGridSettings
     from hintgrid.pipeline.feed import RecommendationDetail
+    from hintgrid.pipeline.post_info import PostInfo
     from hintgrid.pipeline.stats import UserInfo
     from hintgrid.state import PipelineState
 
@@ -907,6 +908,168 @@ def print_user_info_table(user_info: UserInfo) -> None:
 
         console.print(activity_table)
         console.print()
+
+
+def print_post_info_table(post_info: PostInfo) -> None:
+    """Print post information table using Rich.
+
+    Args:
+        post_info: Post information dictionary
+    """
+    table = Table(
+        title="[bold]Post Information[/bold]",
+        border_style="cyan",
+        show_header=True,
+        header_style="bold",
+        show_edge=True,
+    )
+    table.add_column("Property", style="cyan", no_wrap=True)
+    table.add_column("Value", style="white")
+
+    post_id = post_info.get("post_id")
+    if post_id is not None:
+        table.add_row("Post ID (internal)", f"{post_id:,}")
+    else:
+        table.add_row("Post ID (internal)", "[dim]—[/dim]")
+
+    account_id = post_info.get("account_id")
+    if account_id is not None:
+        table.add_row("Account ID", f"{account_id:,}")
+    else:
+        table.add_row("Account ID", "[dim]—[/dim]")
+
+    username_val = post_info.get("author_username")
+    if username_val:
+        handle = f"@{username_val}"
+        domain = post_info.get("author_domain")
+        if domain:
+            handle = f"@{username_val}@{domain}"
+        table.add_row("Author", handle)
+    else:
+        table.add_row("Author", "[dim]—[/dim]")
+
+    uri = post_info.get("uri")
+    if uri:
+        table.add_row("URI", str(uri))
+    else:
+        table.add_row("URI", "[dim]—[/dim]")
+
+    url = post_info.get("url")
+    if url:
+        table.add_row("URL", str(url))
+    else:
+        table.add_row("URL", "[dim]—[/dim]")
+
+    vis_label = post_info.get("visibility_label")
+    if vis_label:
+        table.add_row("Visibility", vis_label)
+    else:
+        table.add_row("Visibility", "[dim]—[/dim]")
+
+    lang = post_info.get("language")
+    if lang:
+        table.add_row("Language", str(lang))
+    else:
+        table.add_row("Language", "[dim]—[/dim]")
+
+    sensitive = post_info.get("sensitive", False)
+    sens_str = "[green]Yes[/green]" if sensitive else "[yellow]No[/yellow]"
+    table.add_row("Sensitive", sens_str)
+
+    reblog = post_info.get("reblog_of_id")
+    if reblog is not None:
+        table.add_row("Reblog of ID", f"{reblog:,}")
+    else:
+        table.add_row("Reblog of ID", "[dim]—[/dim]")
+
+    reply = post_info.get("in_reply_to_id")
+    if reply is not None:
+        table.add_row("In reply to ID", f"{reply:,}")
+    else:
+        table.add_row("In reply to ID", "[dim]—[/dim]")
+
+    text = post_info.get("text")
+    if text:
+        preview = text if len(text) <= 400 else text[:397] + "..."
+        table.add_row("Text preview", preview)
+    else:
+        table.add_row("Text preview", "[dim]—[/dim]")
+
+    created_pg = post_info.get("created_at_pg")
+    if created_pg is not None:
+        table.add_row("Created at (DB)", created_pg.strftime("%Y-%m-%d %H:%M:%S"))
+    else:
+        table.add_row("Created at (DB)", "[dim]—[/dim]")
+
+    created_neo = post_info.get("created_at_neo")
+    if created_neo is not None:
+        table.add_row("Created at (graph)", str(created_neo))
+    else:
+        table.add_row("Created at (graph)", "[dim]—[/dim]")
+
+    console.print()
+    console.print(table)
+    console.print()
+
+    has_graph_extra = any(
+        post_info.get(k) is not None
+        for k in (
+            "post_community_id",
+            "total_favourites",
+            "pagerank",
+        )
+    )
+    if not has_graph_extra:
+        return
+
+    graph_table = Table(
+        title="[bold]Graph metrics[/bold]",
+        border_style="magenta",
+        show_header=True,
+        header_style="bold",
+        show_edge=True,
+    )
+    graph_table.add_column("Property", style="cyan", no_wrap=True)
+    graph_table.add_column("Value", style="white")
+
+    pc_id = post_info.get("post_community_id")
+    if pc_id is not None:
+        graph_table.add_row("Post community ID", str(pc_id))
+    else:
+        graph_table.add_row("Post community ID", "[dim]—[/dim]")
+
+    pc_sz = post_info.get("post_community_size")
+    if pc_sz is not None:
+        graph_table.add_row("Post community size", f"{pc_sz:,}")
+    else:
+        graph_table.add_row("Post community size", "[dim]—[/dim]")
+
+    tf = post_info.get("total_favourites")
+    if tf is not None:
+        graph_table.add_row("Total favourites (graph)", f"{tf:,}")
+    else:
+        graph_table.add_row("Total favourites (graph)", "[dim]—[/dim]")
+
+    trb = post_info.get("total_reblogs")
+    if trb is not None:
+        graph_table.add_row("Total reblogs (graph)", f"{trb:,}")
+    else:
+        graph_table.add_row("Total reblogs (graph)", "[dim]—[/dim]")
+
+    tre = post_info.get("total_replies")
+    if tre is not None:
+        graph_table.add_row("Total replies (graph)", f"{tre:,}")
+    else:
+        graph_table.add_row("Total replies (graph)", "[dim]—[/dim]")
+
+    pr = post_info.get("pagerank")
+    if pr is not None:
+        graph_table.add_row("PageRank", f"{pr:.6f}")
+    else:
+        graph_table.add_row("PageRank", "[dim]—[/dim]")
+
+    console.print(graph_table)
+    console.print()
 
 
 def print_recommendations_table(

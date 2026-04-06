@@ -39,6 +39,7 @@ from hintgrid.pipeline.interests import (
     seed_serendipity,
 )
 from hintgrid.pipeline.loaders import load_incremental_data
+from hintgrid.pipeline.post_info import get_extended_post_info
 from hintgrid.pipeline.stats import (
     get_extended_user_info,
     show_graph_overview_after_loading,
@@ -49,8 +50,8 @@ from hintgrid.pipeline.stats import (
 __all__ = [
     "EmbeddingMigrationResult",
     "check_clusters_exist",
-    "check_embeddings_exist",
     "check_embedding_config",
+    "check_embeddings_exist",
     "check_interests_exist",
     "cleanup_expired_interests",
     "cleanup_inactive_users",
@@ -62,6 +63,7 @@ __all__ = [
     "generate_user_feed",
     "get_detailed_recommendations",
     "get_embedding_status",
+    "get_extended_post_info",
     "get_extended_user_info",
     "load_incremental_data",
     "mark_recommended",

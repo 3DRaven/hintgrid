@@ -38,7 +38,7 @@ _GRAPH_KIND = Literal["user_interaction", "post_similarity"]
 
 # --- Cypher: fixed relationship types (no dynamic injection) ---
 _EDGE_STATS_INTERACTS: LiteralString = (
-    "MATCH ()-[r:INTERACTS_WITH]->() "
+    "MATCH (u:__user__)-[r:INTERACTS_WITH]->(v:__user__) "
     "RETURN count(r) AS rel_count, "
     "sum(r.weight) AS weight_sum, "
     "min(r.weight) AS weight_min, "
@@ -50,7 +50,7 @@ _EDGE_STATS_INTERACTS: LiteralString = (
 )
 
 _EDGE_STATS_SIMILAR: LiteralString = (
-    "MATCH ()-[r:SIMILAR_TO]->() "
+    "MATCH (p:__post__)-[r:SIMILAR_TO]->(q:__post__) "
     "RETURN count(r) AS rel_count, "
     "sum(r.weight) AS weight_sum, "
     "min(r.weight) AS weight_min, "
@@ -63,7 +63,7 @@ _EDGE_STATS_SIMILAR: LiteralString = (
 
 _DEG_STATS_USER: LiteralString = (
     "MATCH (u:__user__) "
-    "WITH u, COUNT { (u)-[:INTERACTS_WITH]->() } AS out_deg "
+    "WITH u, COUNT { (u)-[:INTERACTS_WITH]->(v:__user__) } AS out_deg "
     "RETURN count(u) AS node_count, "
     "avg(out_deg) AS out_deg_avg, "
     "percentileCont(out_deg, 0.5) AS out_deg_p50, "
@@ -75,7 +75,7 @@ _DEG_STATS_USER: LiteralString = (
 
 _DEG_STATS_POST: LiteralString = (
     "MATCH (p:__post__) "
-    "WITH p, COUNT { (p)-[:SIMILAR_TO]->() } AS out_deg "
+    "WITH p, COUNT { (p)-[:SIMILAR_TO]->(q:__post__) } AS out_deg "
     "RETURN count(p) AS node_count, "
     "avg(out_deg) AS out_deg_avg, "
     "percentileCont(out_deg, 0.5) AS out_deg_p50, "
@@ -136,7 +136,10 @@ def _merge_degree_row(target: WeightedGraphStats, row: dict[str, Neo4jValue]) ->
 def collect_user_interaction_graph_stats(neo4j: Neo4jClient) -> WeightedGraphStats:
     """Aggregate INTERACTS_WITH weights and User out-degree percentiles."""
     stats: WeightedGraphStats = {}
-    edge_rows = neo4j.execute_and_fetch(_EDGE_STATS_INTERACTS)
+    edge_rows = neo4j.execute_and_fetch_labeled(
+        _EDGE_STATS_INTERACTS,
+        {"user": "User"},
+    )
     if edge_rows:
         _merge_edge_row(stats, edge_rows[0])
     deg_rows = neo4j.execute_and_fetch_labeled(_DEG_STATS_USER, {"user": "User"})
@@ -148,7 +151,10 @@ def collect_user_interaction_graph_stats(neo4j: Neo4jClient) -> WeightedGraphSta
 def collect_post_similarity_graph_stats(neo4j: Neo4jClient) -> WeightedGraphStats:
     """Aggregate SIMILAR_TO weights and Post out-degree percentiles."""
     stats: WeightedGraphStats = {}
-    edge_rows = neo4j.execute_and_fetch(_EDGE_STATS_SIMILAR)
+    edge_rows = neo4j.execute_and_fetch_labeled(
+        _EDGE_STATS_SIMILAR,
+        {"post": "Post"},
+    )
     if edge_rows:
         _merge_edge_row(stats, edge_rows[0])
     deg_rows = neo4j.execute_and_fetch_labeled(_DEG_STATS_POST, {"post": "Post"})
