@@ -3,21 +3,31 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable
 from typing import TYPE_CHECKING, LiteralString
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
+
     from hintgrid.clients.neo4j import Neo4jClient
     from hintgrid.clients.redis import RedisClient
-
-from hintgrid.config import HintGridSettings
+    from hintgrid.config import HintGridSettings
 from hintgrid.pipeline.feed_detail import RecommendationDetail, get_detailed_recommendations
+from hintgrid.pipeline.feed_personalized_queries import (
+    build_personalized_feed_query,
+    personalized_feed_score_params,
+    public_feed_interest_weight,
+)
 from hintgrid.pipeline.feed_queries import (
     build_feed_filters,
-    build_popularity_expr,
+    build_global_raw_binding,
+    build_global_raw_expression,
+    build_local_raw_binding,
+    build_local_raw_expression,
+    build_popularity_contrib_expr,
     language_match_score_case,
     pagerank_binding,
     pagerank_score_weight_line,
+    popularity_score_params,
 )
 from hintgrid.utils.coercion import coerce_float, coerce_int
 
@@ -65,57 +75,38 @@ def generate_user_feed(
 ) -> list[dict[str, float]]:
     """Generate personalized feed for user with cold start fallback."""
     filters = build_feed_filters(rel_types)
-    popularity = build_popularity_expr(rel_types)
+    local_raw = build_local_raw_binding(rel_types)
+    global_raw = build_global_raw_binding()
+    pop_contrib = build_popularity_contrib_expr(settings)
 
     # Try personalized feed based on community interests
     pr_bind = pagerank_binding(settings)
     pr_w = pagerank_score_weight_line(settings)
-    personalized_query: LiteralString = (
-        "MATCH (u:__user__ {id: $user_id})-[:BELONGS_TO]->(uc:__uc__) "
-        "      -[i:INTERESTED_IN]->(pc:__pc__)<-[:BELONGS_TO]-(p:__post__) "
-        "WHERE p.createdAt > datetime() - duration({days: $feed_days}) "
-        "AND uc.id <> $noise_community_id AND pc.id <> $noise_community_id "
-        + filters
-        + "WITH u, p, i.score AS interest_score, "
-        + popularity
-        + ", "
-        "     duration.between(datetime(p.createdAt), datetime()).hours AS age_hours, "
-        + pr_bind
-        + " "
-        "WITH u, p, interest_score, popularity, age_hours, pagerank, "
-        "     interest_score * $interest_weight + "
-        "     log10(popularity + $popularity_smoothing) * $popularity_weight + "
-        "     ($recency_numerator / (age_hours / 24.0 + $recency_smoothing)) * $recency_weight + "
-        + pr_w
-        + language_match_score_case()
-        + "AS score "
-        "RETURN p.id AS post_id, score "
-        "ORDER BY score DESC LIMIT $feed_size"
+    personalized_query: LiteralString = build_personalized_feed_query(
+        filters=filters,
+        local_raw_bind=local_raw,
+        global_raw_bind=global_raw,
+        pop_contrib=pop_contrib,
+        pr_bind=pr_bind,
+        pr_w=pr_w,
+        return_mode="feed",
     )
+    personalized_params: dict[str, float | int] = {
+        "user_id": user_id,
+        "feed_days": settings.feed_days,
+        "feed_size": settings.feed_size,
+        "noise_community_id": settings.noise_community_id,
+    }
+    personalized_params.update(personalized_feed_score_params(settings))
     rows = list(
         neo4j.execute_and_fetch_labeled(
             personalized_query,
             {"user": "User", "uc": "UserCommunity", "pc": "PostCommunity", "post": "Post"},
-            {
-                "user_id": user_id,
-                "feed_days": settings.feed_days,
-                "feed_size": settings.feed_size,
-                "noise_community_id": settings.noise_community_id,
-                "interest_weight": settings.personalized_interest_weight,
-                "popularity_weight": settings.personalized_popularity_weight,
-                "recency_weight": settings.personalized_recency_weight,
-                "pagerank_weight": settings.pagerank_weight if settings.pagerank_enabled else 0.0,
-                "popularity_smoothing": settings.popularity_smoothing,
-                "recency_smoothing": settings.recency_smoothing,
-                "recency_numerator": settings.recency_numerator,
-                "language_match_weight": settings.language_match_weight,
-                "ui_language_match_weight": settings.ui_language_match_weight,
-            },
+            personalized_params,
         )
     )
 
     # If no personalized results, use cold start (globally popular posts).
-    # Cold-start score matches feed_detail.get_detailed_recommendations (pagerank + language).
     if not rows:
         logger.info("Cold start for user %s", user_id)
         cold_start_limit = min(settings.feed_size, settings.cold_start_limit)
@@ -123,12 +114,20 @@ def generate_user_feed(
             "MATCH (u:__user__ {id: $user_id}) "
             "MATCH (p:__post__) "
             "WHERE p.createdAt > datetime() - duration({days: $feed_days}) "
-            "  AND p.embedding IS NOT NULL " + filters + "WITH u, p, " + popularity + ", "
+            "  AND p.embedding IS NOT NULL " + filters + "WITH u, p, "
+            + local_raw
+            + ", "
+            + global_raw
+            + ", "
             "     duration.between(datetime(p.createdAt), datetime()).hours AS age_hours, "
             + pr_bind
             + " "
-            "WITH u, p, popularity, age_hours, pagerank, "
-            "     log10(popularity + $popularity_smoothing) * $popularity_weight + "
+            "WITH u, p, local_raw, global_raw, age_hours, pagerank, "
+            "     ("
+            + pop_contrib
+            + ") AS popularity_contrib "
+            "WITH u, p, local_raw, global_raw, age_hours, pagerank, popularity_contrib, "
+            "     popularity_contrib * $popularity_weight + "
             "     ($recency_numerator / (age_hours / 24.0 + $recency_smoothing)) * $recency_weight + "
             + pr_w
             + language_match_score_case()
@@ -136,23 +135,24 @@ def generate_user_feed(
             "RETURN p.id AS post_id, score "
             "ORDER BY score DESC LIMIT $cold_start_limit"
         )
+        cold_params: dict[str, float | int] = {
+            "user_id": user_id,
+            "feed_days": settings.feed_days,
+            "cold_start_limit": cold_start_limit,
+            "popularity_weight": settings.cold_start_popularity_weight,
+            "recency_weight": settings.cold_start_recency_weight,
+            "pagerank_weight": settings.pagerank_weight if settings.pagerank_enabled else 0.0,
+            "recency_smoothing": settings.recency_smoothing,
+            "recency_numerator": settings.recency_numerator,
+            "language_match_weight": settings.language_match_weight,
+            "ui_language_match_weight": settings.ui_language_match_weight,
+        }
+        cold_params.update(popularity_score_params(settings))
         rows = list(
             neo4j.execute_and_fetch_labeled(
                 cold_start_query,
                 {"user": "User", "post": "Post"},
-                {
-                    "user_id": user_id,
-                    "feed_days": settings.feed_days,
-                    "cold_start_limit": cold_start_limit,
-                    "popularity_weight": settings.cold_start_popularity_weight,
-                    "recency_weight": settings.cold_start_recency_weight,
-                    "pagerank_weight": settings.pagerank_weight if settings.pagerank_enabled else 0.0,
-                    "popularity_smoothing": settings.popularity_smoothing,
-                    "recency_smoothing": settings.recency_smoothing,
-                    "recency_numerator": settings.recency_numerator,
-                    "language_match_weight": settings.language_match_weight,
-                    "ui_language_match_weight": settings.ui_language_match_weight,
-                },
+                cold_params,
             )
         )
 
@@ -255,7 +255,9 @@ def generate_public_feed(
     Returns:
         List of recommendations sorted by score DESC.
     """
-    popularity = build_popularity_expr(rel_types)
+    lr_expr = build_local_raw_expression(rel_types)
+    gr_expr = build_global_raw_expression()
+    pop_contrib = build_popularity_contrib_expr(settings)
 
     # Build the query depending on strategy
     if local_only_interests:
@@ -293,16 +295,24 @@ def generate_public_feed(
     query: LiteralString = (
         match_clause
         + where_clause
-        + "WITH p, "
-        + "     sum(i.score) AS community_interest, "
-        + popularity
-        + ", "
+        + "WITH p, sum(i.score) AS community_interest "
+        + "WITH p, community_interest, "
+        + "     "
+        + lr_expr
+        + " AS local_raw, "
+        + "     ("
+        + gr_expr
+        + ") AS global_raw, "
+        + "     duration.between(datetime(p.createdAt), datetime()).hours AS age_hours, "
         + pr_bind
-        + ", "
-        + "     duration.between(datetime(p.createdAt), datetime()).hours AS age_hours "
+        + " "
+        + "WITH p, community_interest, local_raw, global_raw, age_hours, pagerank, "
+        + "     ("
+        + pop_contrib
+        + ") AS popularity_contrib "
         + "WITH p, "
         + "     community_interest * $interest_weight + "
-        + "     log10(popularity + $popularity_smoothing) * $popularity_weight + "
+        + "     popularity_contrib * $popularity_weight + "
         + score_tail
         + "RETURN p.id AS post_id, score "
         + "ORDER BY score DESC LIMIT $public_feed_size"
@@ -316,22 +326,23 @@ def generate_public_feed(
     if local_only_interests or local_only_authors:
         label_map["user"] = "User"
 
+    public_params: dict[str, float | int] = {
+        "feed_days": settings.feed_days,
+        "public_feed_size": settings.public_feed_size,
+        "noise_community_id": settings.noise_community_id,
+        "interest_weight": public_feed_interest_weight(settings),
+        "popularity_weight": settings.personalized_popularity_weight,
+        "recency_weight": settings.personalized_recency_weight,
+        "pagerank_weight": (settings.pagerank_weight if settings.pagerank_enabled else 0.0),
+        "recency_smoothing": settings.recency_smoothing,
+        "recency_numerator": settings.recency_numerator,
+    }
+    public_params.update(popularity_score_params(settings))
     rows = list(
         neo4j.execute_and_fetch_labeled(
             query,
             label_map,
-            {
-                "feed_days": settings.feed_days,
-                "public_feed_size": settings.public_feed_size,
-                "noise_community_id": settings.noise_community_id,
-                "interest_weight": settings.personalized_interest_weight,
-                "popularity_weight": settings.personalized_popularity_weight,
-                "recency_weight": settings.personalized_recency_weight,
-                "pagerank_weight": (settings.pagerank_weight if settings.pagerank_enabled else 0.0),
-                "popularity_smoothing": settings.popularity_smoothing,
-                "recency_smoothing": settings.recency_smoothing,
-                "recency_numerator": settings.recency_numerator,
-            },
+            public_params,
         )
     )
 

@@ -125,7 +125,6 @@ def test_print_settings_table_contains_all_fields(settings: HintGridSettings) ->
     """Verify that print_settings_table displays all settings fields."""
     from hintgrid.cli.console import print_settings_table
     from hintgrid.config import HintGridSettings
-    from hintgrid.config import HintGridSettings
     from io import StringIO
     import sys
 
@@ -403,7 +402,9 @@ def test_print_recommendations_table_with_data(capsys: pytest.CaptureFixture[str
             "post_created_at": datetime.now() - timedelta(hours=2),
             "author_id": 2001,
             "interest_score": 0.85,
-            "popularity": 10,
+            "local_raw": 10.0,
+            "global_raw": 3.0,
+            "popularity_contrib": 1.0,
             "age_hours": 2.0,
             "pagerank": 0.5,
             "language_match": 0.3,
@@ -416,7 +417,9 @@ def test_print_recommendations_table_with_data(capsys: pytest.CaptureFixture[str
             "post_created_at": datetime.now() - timedelta(hours=5),
             "author_id": 2002,
             "interest_score": 0.7,
-            "popularity": 5,
+            "local_raw": 5.0,
+            "global_raw": 2.0,
+            "popularity_contrib": 0.9,
             "age_hours": 5.0,
             "pagerank": 0.3,
             "language_match": 0.0,
@@ -492,7 +495,9 @@ def test_print_recommendations_table_long_text_truncated(capsys: pytest.CaptureF
             "post_created_at": datetime.now(),
             "author_id": 2003,
             "interest_score": 0.5,
-            "popularity": 0,
+            "local_raw": 0.0,
+            "global_raw": 0.0,
+            "popularity_contrib": 0.0,
             "age_hours": 0.0,
             "pagerank": 0.0,
             "language_match": 0.3,
@@ -628,7 +633,9 @@ def test_print_recommendations_table_missing_author_info(capsys: pytest.CaptureF
             "post_created_at": datetime.now(),
             "author_id": 9999,  # Author not in author_info
             "interest_score": 0.5,
-            "popularity": 0,
+            "local_raw": 0.0,
+            "global_raw": 0.0,
+            "popularity_contrib": 0.0,
             "age_hours": 0.0,
             "pagerank": 0.0,
             "language_match": 0.0,

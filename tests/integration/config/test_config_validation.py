@@ -195,7 +195,8 @@ class TestValidateSettings:
     def test_invalid_personalized_weights_sum(self) -> None:
         """Personalized weights not summing to 1.0 should raise ConfigurationError."""
         settings = HintGridSettings(
-            personalized_interest_weight=0.5,
+            feed_pc_share_weight=0.45,
+            feed_pc_size_weight=0.05,
             personalized_popularity_weight=0.5,
             personalized_recency_weight=0.5,
         )
@@ -212,6 +213,35 @@ class TestValidateSettings:
         with pytest.raises(ConfigurationError) as exc_info:
             validate_settings(settings)
         assert "Cold start weights" in str(exc_info.value)
+
+    def test_invalid_feed_popularity_mode(self) -> None:
+        """Unknown feed_popularity_mode should raise ConfigurationError."""
+        settings = HintGridSettings.model_construct(feed_popularity_mode="planet")  # type: ignore[arg-type]
+        with pytest.raises(ConfigurationError) as exc_info:
+            validate_settings(settings)
+        assert "feed_popularity_mode" in str(exc_info.value)
+
+    def test_global_popularity_weights_must_sum_to_one(self) -> None:
+        """Global composite weights must sum to 1.0."""
+        settings = HintGridSettings(
+            global_popularity_favourites_weight=0.5,
+            global_popularity_reblogs_weight=0.5,
+            global_popularity_replies_weight=0.5,
+        )
+        with pytest.raises(ConfigurationError) as exc_info:
+            validate_settings(settings)
+        assert "global_popularity_favourites_weight" in str(exc_info.value)
+
+    def test_blended_blend_weights_must_sum_to_one(self) -> None:
+        """Blended mode requires blend_local + blend_global = 1.0."""
+        settings = HintGridSettings(
+            feed_popularity_mode="blended",
+            feed_popularity_blend_local=0.4,
+            feed_popularity_blend_global=0.5,
+        )
+        with pytest.raises(ConfigurationError) as exc_info:
+            validate_settings(settings)
+        assert "feed_popularity_blend" in str(exc_info.value)
 
     def test_invalid_serendipity_probability(self) -> None:
         """Serendipity probability outside 0-1 should raise ConfigurationError."""

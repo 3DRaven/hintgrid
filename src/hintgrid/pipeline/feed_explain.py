@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import math
 from typing import TYPE_CHECKING, Literal, LiteralString, TypedDict, cast
 
 if TYPE_CHECKING:
@@ -11,12 +10,19 @@ if TYPE_CHECKING:
     from hintgrid.clients.redis import RedisClient
 
 from hintgrid.config import HintGridSettings, feed_debug_settings_snapshot
+from hintgrid.pipeline.feed_personalized_queries import (
+    build_personalized_feed_query,
+    personalized_feed_score_params,
+)
 from hintgrid.pipeline.feed_queries import (
     build_feed_filters,
-    build_popularity_expr,
+    build_global_raw_binding,
+    build_local_raw_binding,
+    build_popularity_contrib_expr,
     language_match_score_case,
     pagerank_binding,
     pagerank_score_weight_line,
+    popularity_score_params,
 )
 from hintgrid.utils.coercion import coerce_float, coerce_int
 
@@ -54,10 +60,16 @@ class ScoreComponents(TypedDict):
     """Raw and weighted parts matching generate_user_feed Cypher formula."""
 
     interest_score: float
-    popularity: int
+    share_i: float
+    norm_pc_size: float
+    local_raw: float
+    global_raw: float
+    popularity_contrib: float
     age_hours: float
     pagerank: float
     language_match: float
+    weighted_pc_share: float
+    weighted_pc_size: float
     weighted_interest: float
     weighted_popularity: float
     weighted_recency: float
@@ -115,27 +127,33 @@ def _compute_weighted_components(
     *,
     path: FeedInclusionPath,
     interest_score: float,
-    popularity: int,
+    share_i: float,
+    norm_pc_size: float,
+    local_raw: float,
+    global_raw: float,
+    popularity_contrib: float,
     age_hours: float,
     pagerank: float,
     language_match: float,
     settings: HintGridSettings,
 ) -> ScoreComponents:
     """Mirror Cypher scoring from generate_user_feed / get_detailed_recommendations."""
-    pop = float(popularity)
     recency_term = settings.recency_numerator / (age_hours / 24.0 + settings.recency_smoothing)
     if path == "personalized":
-        wi = interest_score * settings.personalized_interest_weight
-        wp = (
-            math.log10(pop + settings.popularity_smoothing)
-            * settings.personalized_popularity_weight
-        )
+        w_share = share_i * settings.feed_pc_share_weight
+        w_size = norm_pc_size * settings.feed_pc_size_weight
+        wi = w_share + w_size
+        wp = popularity_contrib * settings.personalized_popularity_weight
         wr = recency_term * settings.personalized_recency_weight
     elif path == "cold_start":
+        w_share = 0.0
+        w_size = 0.0
         wi = 0.0
-        wp = math.log10(pop + settings.popularity_smoothing) * settings.cold_start_popularity_weight
+        wp = popularity_contrib * settings.cold_start_popularity_weight
         wr = recency_term * settings.cold_start_recency_weight
     else:
+        w_share = 0.0
+        w_size = 0.0
         wi = 0.0
         wp = 0.0
         wr = 0.0
@@ -143,10 +161,16 @@ def _compute_weighted_components(
     final = wi + wp + wr + wpr + language_match
     return ScoreComponents(
         interest_score=interest_score,
-        popularity=popularity,
+        share_i=share_i,
+        norm_pc_size=norm_pc_size,
+        local_raw=local_raw,
+        global_raw=global_raw,
+        popularity_contrib=popularity_contrib,
         age_hours=age_hours,
         pagerank=pagerank,
         language_match=language_match,
+        weighted_pc_share=w_share,
+        weighted_pc_size=w_size,
         weighted_interest=wi,
         weighted_popularity=wp,
         weighted_recency=wr,
@@ -218,61 +242,37 @@ def _run_personalized_single(
     rel_types: frozenset[str] | None,
 ) -> dict[str, object] | None:
     filters = build_feed_filters(rel_types)
-    popularity_expr = build_popularity_expr(rel_types)
+    local_raw = build_local_raw_binding(rel_types)
+    global_raw = build_global_raw_binding()
+    pop_contrib = build_popularity_contrib_expr(settings)
     pr_bind = pagerank_binding(settings)
     pr_w = pagerank_score_weight_line(settings)
-    personalized_query: LiteralString = (
-        "MATCH (u:__user__ {id: $user_id})-[:BELONGS_TO]->(uc:__uc__) "
-        "      -[i:INTERESTED_IN]->(pc:__pc__)<-[:BELONGS_TO]-(p:__post__ {id: $post_id}) "
-        "WHERE p.createdAt > datetime() - duration({days: $feed_days}) "
-        "AND uc.id <> $noise_community_id AND pc.id <> $noise_community_id "
-        + filters
-        + "WITH u, p, i, uc, pc, i.score AS interest_score, "
-        + popularity_expr
-        + ", "
-        "     duration.between(datetime(p.createdAt), datetime()).hours AS age_hours, "
-        + pr_bind
-        + " "
-        "WITH u, p, i, uc, pc, interest_score, popularity, age_hours, pagerank, "
-        "     i.based_on AS based_on, i.serendipity AS serendipity, i.expires_at AS expires_at, "
-        "     uc.id AS user_community_id, pc.id AS post_community_id, "
-        "     interest_score * $interest_weight + "
-        "     log10(popularity + $popularity_smoothing) * $popularity_weight + "
-        "     ($recency_numerator / (age_hours / 24.0 + $recency_smoothing)) * $recency_weight + "
-        + pr_w
-        + language_match_score_case()
-        + "AS score, "
-        + language_match_score_case()
-        + "AS language_match "
-        "RETURN score AS final_score, interest_score, popularity, age_hours, pagerank, "
-        "       language_match, based_on, serendipity, expires_at, "
-        "       user_community_id, post_community_id "
-        "ORDER BY final_score DESC LIMIT 1"
+    personalized_query: LiteralString = build_personalized_feed_query(
+        filters=filters,
+        local_raw_bind=local_raw,
+        global_raw_bind=global_raw,
+        pop_contrib=pop_contrib,
+        pr_bind=pr_bind,
+        pr_w=pr_w,
+        return_mode="explain",
     )
+    personalized_params: dict[str, float | int] = {
+        "user_id": viewer_user_id,
+        "post_id": post_id,
+        "feed_days": settings.feed_days,
+        "noise_community_id": settings.noise_community_id,
+    }
+    personalized_params.update(personalized_feed_score_params(settings))
     rows = list(
         neo4j.execute_and_fetch_labeled(
             personalized_query,
             {"user": "User", "uc": "UserCommunity", "pc": "PostCommunity", "post": "Post"},
-            {
-                "user_id": viewer_user_id,
-                "post_id": post_id,
-                "feed_days": settings.feed_days,
-                "noise_community_id": settings.noise_community_id,
-                "interest_weight": settings.personalized_interest_weight,
-                "popularity_weight": settings.personalized_popularity_weight,
-                "recency_weight": settings.personalized_recency_weight,
-                "pagerank_weight": settings.pagerank_weight if settings.pagerank_enabled else 0.0,
-                "popularity_smoothing": settings.popularity_smoothing,
-                "recency_smoothing": settings.recency_smoothing,
-                "recency_numerator": settings.recency_numerator,
-                "language_match_weight": settings.language_match_weight,
-                "ui_language_match_weight": settings.ui_language_match_weight,
-            },
+            personalized_params,
         )
     )
     if not rows:
         return None
-    return cast(dict[str, object], rows[0])
+    return cast("dict[str, object]", rows[0])
 
 
 def _run_cold_start_single(
@@ -283,48 +283,62 @@ def _run_cold_start_single(
     rel_types: frozenset[str] | None,
 ) -> dict[str, object] | None:
     filters = build_feed_filters(rel_types)
-    popularity_expr = build_popularity_expr(rel_types)
+    local_raw = build_local_raw_binding(rel_types)
+    global_raw = build_global_raw_binding()
+    pop_contrib = build_popularity_contrib_expr(settings)
     pr_bind = pagerank_binding(settings)
     pr_w = pagerank_score_weight_line(settings)
     cold_query: LiteralString = (
         "MATCH (u:__user__ {id: $user_id}), (p:__post__ {id: $post_id}) "
         "WHERE p.createdAt > datetime() - duration({days: $feed_days}) "
-        "  AND p.embedding IS NOT NULL " + filters + "WITH u, p, " + popularity_expr + ", "
+        "  AND p.embedding IS NOT NULL "
+        + filters
+        + "WITH u, p, "
+        + local_raw
+        + ", "
+        + global_raw
+        + ", "
         "     duration.between(datetime(p.createdAt), datetime()).hours AS age_hours, "
         + pr_bind
         + " "
-        "WITH u, p, popularity, age_hours, pagerank, "
-        "     log10(popularity + $popularity_smoothing) * $popularity_weight + "
+        "WITH u, p, local_raw, global_raw, age_hours, pagerank, "
+        "     ("
+        + pop_contrib
+        + ") AS popularity_contrib "
+        "WITH u, p, local_raw, global_raw, age_hours, pagerank, popularity_contrib, "
+        "     popularity_contrib * $popularity_weight + "
         "     ($recency_numerator / (age_hours / 24.0 + $recency_smoothing)) * $recency_weight + "
         + pr_w
         + language_match_score_case()
         + "AS score, "
         + language_match_score_case()
         + "AS language_match "
-        "RETURN score AS final_score, popularity, age_hours, pagerank, language_match"
+        "RETURN score AS final_score, local_raw, global_raw, popularity_contrib, "
+        "       age_hours, pagerank, language_match"
     )
+    cold_params: dict[str, float | int] = {
+        "user_id": viewer_user_id,
+        "post_id": post_id,
+        "feed_days": settings.feed_days,
+        "popularity_weight": settings.cold_start_popularity_weight,
+        "recency_weight": settings.cold_start_recency_weight,
+        "pagerank_weight": settings.pagerank_weight if settings.pagerank_enabled else 0.0,
+        "recency_smoothing": settings.recency_smoothing,
+        "recency_numerator": settings.recency_numerator,
+        "language_match_weight": settings.language_match_weight,
+        "ui_language_match_weight": settings.ui_language_match_weight,
+    }
+    cold_params.update(popularity_score_params(settings))
     rows = list(
         neo4j.execute_and_fetch_labeled(
             cold_query,
             {"user": "User", "post": "Post"},
-            {
-                "user_id": viewer_user_id,
-                "post_id": post_id,
-                "feed_days": settings.feed_days,
-                "popularity_weight": settings.cold_start_popularity_weight,
-                "recency_weight": settings.cold_start_recency_weight,
-                "pagerank_weight": settings.pagerank_weight if settings.pagerank_enabled else 0.0,
-                "popularity_smoothing": settings.popularity_smoothing,
-                "recency_smoothing": settings.recency_smoothing,
-                "recency_numerator": settings.recency_numerator,
-                "language_match_weight": settings.language_match_weight,
-                "ui_language_match_weight": settings.ui_language_match_weight,
-            },
+            cold_params,
         )
     )
     if not rows:
         return None
-    return cast(dict[str, object], rows[0])
+    return cast("dict[str, object]", rows[0])
 
 
 def _redis_placement(
@@ -378,7 +392,11 @@ def explain_feed_inclusion(
     personalized_row = _run_personalized_single(neo4j, viewer_user_id, post_id, settings, rel_types)
     if personalized_row:
         interest_score = coerce_float(personalized_row.get("interest_score") or 0.0)
-        popularity = coerce_int(personalized_row.get("popularity") or 0)
+        share_i_v = coerce_float(personalized_row.get("share_i") or 0.0)
+        norm_pc_v = coerce_float(personalized_row.get("norm_pc_size") or 0.0)
+        local_raw_v = coerce_float(personalized_row.get("local_raw") or 0.0)
+        global_raw_v = coerce_float(personalized_row.get("global_raw") or 0.0)
+        popularity_contrib_v = coerce_float(personalized_row.get("popularity_contrib") or 0.0)
         age_hours = coerce_float(personalized_row.get("age_hours") or 0.0)
         pagerank = coerce_float(personalized_row.get("pagerank") or 0.0)
         language_match = coerce_float(personalized_row.get("language_match") or 0.0)
@@ -386,7 +404,11 @@ def explain_feed_inclusion(
         components = _compute_weighted_components(
             path="personalized",
             interest_score=interest_score,
-            popularity=popularity,
+            share_i=share_i_v,
+            norm_pc_size=norm_pc_v,
+            local_raw=local_raw_v,
+            global_raw=global_raw_v,
+            popularity_contrib=popularity_contrib_v,
             age_hours=age_hours,
             pagerank=pagerank,
             language_match=language_match,
@@ -432,7 +454,9 @@ def explain_feed_inclusion(
 
     cold_row = _run_cold_start_single(neo4j, viewer_user_id, post_id, settings, rel_types)
     if cold_row:
-        popularity = coerce_int(cold_row.get("popularity") or 0)
+        local_raw_v = coerce_float(cold_row.get("local_raw") or 0.0)
+        global_raw_v = coerce_float(cold_row.get("global_raw") or 0.0)
+        popularity_contrib_v = coerce_float(cold_row.get("popularity_contrib") or 0.0)
         age_hours = coerce_float(cold_row.get("age_hours") or 0.0)
         pagerank = coerce_float(cold_row.get("pagerank") or 0.0)
         language_match = coerce_float(cold_row.get("language_match") or 0.0)
@@ -440,7 +464,11 @@ def explain_feed_inclusion(
         components = _compute_weighted_components(
             path="cold_start",
             interest_score=0.0,
-            popularity=popularity,
+            share_i=0.0,
+            norm_pc_size=0.0,
+            local_raw=local_raw_v,
+            global_raw=global_raw_v,
+            popularity_contrib=popularity_contrib_v,
             age_hours=age_hours,
             pagerank=pagerank,
             language_match=language_match,

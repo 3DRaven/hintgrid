@@ -113,7 +113,8 @@ def test_generate_public_feed_local_communities_strategy(
     _setup_public_graph(neo4j)
 
     test_settings = HintGridSettings(
-        personalized_interest_weight=1.0,
+        feed_pc_share_weight=1.0,
+        feed_pc_size_weight=0.0,
         personalized_popularity_weight=0.0,
         personalized_recency_weight=0.0,
         public_feed_size=100,
@@ -151,7 +152,8 @@ def test_generate_public_feed_all_communities_strategy(
     _setup_public_graph(neo4j)
 
     test_settings = HintGridSettings(
-        personalized_interest_weight=1.0,
+        feed_pc_share_weight=1.0,
+        feed_pc_size_weight=0.0,
         personalized_popularity_weight=0.0,
         personalized_recency_weight=0.0,
         public_feed_size=100,
@@ -184,7 +186,8 @@ def test_generate_public_feed_local_only_authors(
     _setup_public_graph(neo4j)
 
     test_settings = HintGridSettings(
-        personalized_interest_weight=1.0,
+        feed_pc_share_weight=1.0,
+        feed_pc_size_weight=0.0,
         personalized_popularity_weight=0.0,
         personalized_recency_weight=0.0,
         public_feed_size=100,
@@ -236,7 +239,8 @@ def test_generate_public_feed_scores_are_sorted_desc(
     _setup_public_graph(neo4j)
 
     test_settings = HintGridSettings(
-        personalized_interest_weight=1.0,
+        feed_pc_share_weight=1.0,
+        feed_pc_size_weight=0.0,
         personalized_popularity_weight=0.0,
         personalized_recency_weight=1.0,
         public_feed_size=100,

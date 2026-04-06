@@ -896,9 +896,9 @@ def test_show_post_community_stats_displays_popular_post_and_active_author(
     captured = capsys.readouterr()
     output = captured.out
 
-    # Check that popular post is displayed
+    # Check that popular post is displayed (same popularity model as feed)
     assert "Popular: post 1" in output or "Popular: post" in output
-    assert "interactions" in output.lower()
+    assert "popularity_contrib" in output.lower()
 
     # Check that active author is displayed
     assert "Active author: user 10" in output or "Active author" in output
@@ -933,9 +933,9 @@ def test_show_post_community_stats_displays_avg_popularity(
     captured = capsys.readouterr()
     output = captured.out
 
-    # Check that average popularity is displayed
-    assert "Avg popularity" in output or "avg popularity" in output.lower()
-    assert "interactions/post" in output.lower()
+    # Check that average popularity_contrib is displayed
+    assert "Avg popularity_contrib" in output or "avg popularity_contrib" in output.lower()
+    assert "post" in output.lower()
 
 
 @pytest.mark.integration

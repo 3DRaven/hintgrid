@@ -300,7 +300,8 @@ def test_recency_scoring_uses_hours(
     )
 
     test_settings = HintGridSettings(
-        personalized_interest_weight=0.0,
+        feed_pc_share_weight=0.0,
+        feed_pc_size_weight=0.0,
         personalized_popularity_weight=0.0,
         personalized_recency_weight=1.0,
         recency_numerator=24.0,

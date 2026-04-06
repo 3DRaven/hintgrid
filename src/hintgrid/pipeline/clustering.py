@@ -453,7 +453,7 @@ def run_post_clustering(
     modularity = None
     if leiden_result:
         modularity = coerce_float(leiden_result.get("modularity"))
-    show_post_community_stats(neo4j, postgres=None, modularity=modularity)
+    show_post_community_stats(neo4j, postgres=None, modularity=modularity, settings=settings)
 
 
 def run_similarity_pruning(

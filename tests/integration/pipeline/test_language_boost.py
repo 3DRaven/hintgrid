@@ -75,7 +75,8 @@ def test_language_match_boosts_score(
     _setup_language_graph(neo4j)
 
     test_settings = HintGridSettings(
-        personalized_interest_weight=1.0,
+        feed_pc_share_weight=1.0,
+        feed_pc_size_weight=0.0,
         personalized_popularity_weight=0.0,
         personalized_recency_weight=0.0,
         language_match_weight=0.5,  # Significant boost
@@ -112,7 +113,8 @@ def test_language_boost_not_filter(
     _setup_language_graph(neo4j)
 
     test_settings = HintGridSettings(
-        personalized_interest_weight=1.0,
+        feed_pc_share_weight=1.0,
+        feed_pc_size_weight=0.0,
         personalized_popularity_weight=0.0,
         personalized_recency_weight=0.0,
         language_match_weight=10.0,  # Very high boost
@@ -143,7 +145,8 @@ def test_null_post_language_gets_boost(
     _setup_language_graph(neo4j)
 
     test_settings = HintGridSettings(
-        personalized_interest_weight=1.0,
+        feed_pc_share_weight=1.0,
+        feed_pc_size_weight=0.0,
         personalized_popularity_weight=0.0,
         personalized_recency_weight=0.0,
         language_match_weight=0.5,
@@ -176,7 +179,8 @@ def test_user_without_languages_gets_boost_for_all(
     _setup_language_graph(neo4j)
 
     test_settings = HintGridSettings(
-        personalized_interest_weight=1.0,
+        feed_pc_share_weight=1.0,
+        feed_pc_size_weight=0.0,
         personalized_popularity_weight=0.0,
         personalized_recency_weight=0.0,
         language_match_weight=0.5,
@@ -212,7 +216,8 @@ def test_zero_language_weight_disables_boost(
     _setup_language_graph(neo4j)
 
     test_settings = HintGridSettings(
-        personalized_interest_weight=1.0,
+        feed_pc_share_weight=1.0,
+        feed_pc_size_weight=0.0,
         personalized_popularity_weight=0.0,
         personalized_recency_weight=0.0,
         language_match_weight=0.0,  # Disabled
@@ -308,7 +313,8 @@ def test_ui_locale_boost_stronger_than_chosen_only(
     )
 
     test_settings = HintGridSettings(
-        personalized_interest_weight=1.0,
+        feed_pc_share_weight=1.0,
+        feed_pc_size_weight=0.0,
         personalized_popularity_weight=0.0,
         personalized_recency_weight=0.0,
         language_match_weight=0.3,

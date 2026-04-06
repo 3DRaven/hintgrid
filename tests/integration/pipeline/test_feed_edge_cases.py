@@ -99,7 +99,8 @@ def test_generate_user_feed_empty_results_triggers_cold_start(
         feed_size=100,
         feed_days=7,
         cold_start_limit=50,
-        personalized_interest_weight=1.0,
+        feed_pc_share_weight=1.0,
+        feed_pc_size_weight=0.0,
         personalized_popularity_weight=0.0,
         personalized_recency_weight=0.0,
         cold_start_popularity_weight=1.0,
@@ -135,7 +136,8 @@ def test_generate_user_feed_empty_communities_triggers_cold_start(
         feed_size=100,
         feed_days=7,
         cold_start_limit=50,
-        personalized_interest_weight=1.0,
+        feed_pc_share_weight=1.0,
+        feed_pc_size_weight=0.0,
         personalized_popularity_weight=0.0,
         personalized_recency_weight=0.0,
         cold_start_popularity_weight=1.0,
@@ -180,7 +182,8 @@ def test_generate_user_feed_cold_start_respects_limit(
         feed_size=100,
         feed_days=7,
         cold_start_limit=5,  # Limit to 5 posts
-        personalized_interest_weight=1.0,
+        feed_pc_share_weight=1.0,
+        feed_pc_size_weight=0.0,
         personalized_popularity_weight=0.0,
         personalized_recency_weight=0.0,
         cold_start_popularity_weight=1.0,
@@ -216,7 +219,8 @@ def test_generate_user_feed_cold_start_no_posts_returns_empty(
         feed_size=100,
         feed_days=7,
         cold_start_limit=50,
-        personalized_interest_weight=1.0,
+        feed_pc_share_weight=1.0,
+        feed_pc_size_weight=0.0,
         personalized_popularity_weight=0.0,
         personalized_recency_weight=0.0,
         cold_start_popularity_weight=1.0,
@@ -330,7 +334,8 @@ def test_generate_user_feed_zero_weights(
         feed_size=100,
         feed_days=7,
         cold_start_limit=50,
-        personalized_interest_weight=0.0,
+        feed_pc_share_weight=0.0,
+        feed_pc_size_weight=0.0,
         personalized_popularity_weight=0.0,
         personalized_recency_weight=0.0,
         cold_start_popularity_weight=0.0,
@@ -375,7 +380,8 @@ def test_generate_user_feed_negative_scores_handled(
     test_settings = HintGridSettings(
         feed_size=100,
         feed_days=400,  # Include very old posts
-        personalized_interest_weight=0.0,
+        feed_pc_share_weight=0.0,
+        feed_pc_size_weight=0.0,
         personalized_popularity_weight=0.0,
         personalized_recency_weight=1.0,  # High recency weight
         popularity_smoothing=1,
@@ -464,7 +470,8 @@ def test_generate_public_feed_all_weights_zero(
     test_settings = HintGridSettings(
         public_feed_size=100,
         feed_days=7,
-        personalized_interest_weight=0.0,
+        feed_pc_share_weight=0.0,
+        feed_pc_size_weight=0.0,
         personalized_popularity_weight=0.0,
         personalized_recency_weight=0.0,
         popularity_smoothing=1,
@@ -489,7 +496,8 @@ def test_generate_public_feed_no_communities_returns_empty(
     test_settings = HintGridSettings(
         public_feed_size=100,
         feed_days=7,
-        personalized_interest_weight=1.0,
+        feed_pc_share_weight=1.0,
+        feed_pc_size_weight=0.0,
         personalized_popularity_weight=0.0,
         personalized_recency_weight=0.0,
         neo4j_worker_label=settings.neo4j_worker_label,
@@ -562,7 +570,8 @@ def test_generate_public_feed_local_only_combinations(
     test_settings = HintGridSettings(
         public_feed_size=100,
         feed_days=7,
-        personalized_interest_weight=1.0,
+        feed_pc_share_weight=1.0,
+        feed_pc_size_weight=0.0,
         personalized_popularity_weight=0.0,
         personalized_recency_weight=0.0,
         neo4j_worker_label=settings.neo4j_worker_label,
@@ -653,7 +662,8 @@ def test_get_detailed_recommendations_returns_full_info(
     test_settings = HintGridSettings(
         feed_size=10,
         feed_days=7,
-        personalized_interest_weight=1.0,
+        feed_pc_share_weight=1.0,
+        feed_pc_size_weight=0.0,
         personalized_popularity_weight=0.5,
         personalized_recency_weight=0.3,
         pagerank_weight=0.2,
@@ -677,7 +687,11 @@ def test_get_detailed_recommendations_returns_full_info(
     assert "post_created_at" in first_rec
     assert "author_id" in first_rec
     assert "interest_score" in first_rec
-    assert "popularity" in first_rec
+    assert "share_i" in first_rec
+    assert "norm_pc_size" in first_rec
+    assert "local_raw" in first_rec
+    assert "global_raw" in first_rec
+    assert "popularity_contrib" in first_rec
     assert "age_hours" in first_rec
     assert "pagerank" in first_rec
     assert "language_match" in first_rec
@@ -688,7 +702,11 @@ def test_get_detailed_recommendations_returns_full_info(
     assert isinstance(first_rec["post_text"], str)
     assert isinstance(first_rec["author_id"], int)
     assert isinstance(first_rec["interest_score"], float)
-    assert isinstance(first_rec["popularity"], int)
+    assert isinstance(first_rec["share_i"], float)
+    assert isinstance(first_rec["norm_pc_size"], float)
+    assert isinstance(first_rec["local_raw"], float)
+    assert isinstance(first_rec["global_raw"], float)
+    assert isinstance(first_rec["popularity_contrib"], float)
     assert isinstance(first_rec["age_hours"], float)
     assert isinstance(first_rec["pagerank"], float)
     assert isinstance(first_rec["language_match"], float)
@@ -710,9 +728,10 @@ def test_get_detailed_recommendations_includes_score_components(
     test_settings = HintGridSettings(
         feed_size=10,
         feed_days=7,
-        personalized_interest_weight=1.0,
-        personalized_popularity_weight=1.0,
-        personalized_recency_weight=1.0,
+        feed_pc_share_weight=0.25,
+        feed_pc_size_weight=0.25,
+        personalized_popularity_weight=0.25,
+        personalized_recency_weight=0.25,
         pagerank_weight=1.0,
         pagerank_enabled=True,
         popularity_smoothing=1,
@@ -729,7 +748,9 @@ def test_get_detailed_recommendations_includes_score_components(
     # Check that score components are present and reasonable
     for rec in detailed_recs:
         assert rec["interest_score"] >= 0.0, "Interest score should be non-negative"
-        assert rec["popularity"] >= 0, "Popularity should be non-negative"
+        assert rec["local_raw"] >= 0.0, "local_raw should be non-negative"
+        assert rec["global_raw"] >= 0.0, "global_raw should be non-negative"
+        assert rec["popularity_contrib"] >= 0.0, "popularity_contrib should be non-negative"
         assert rec["age_hours"] >= 0.0, "Age hours should be non-negative"
         assert rec["pagerank"] >= 0.0, "PageRank should be non-negative"
         assert rec["language_match"] >= 0.0, "Language match should be non-negative"
@@ -750,7 +771,8 @@ def test_get_detailed_recommendations_cold_start_has_zero_interest(
         feed_size=10,
         feed_days=7,
         cold_start_limit=5,
-        personalized_interest_weight=1.0,
+        feed_pc_share_weight=1.0,
+        feed_pc_size_weight=0.0,
         personalized_popularity_weight=0.0,
         personalized_recency_weight=0.0,
         cold_start_popularity_weight=1.0,
@@ -788,7 +810,8 @@ def test_get_detailed_recommendations_empty_returns_empty_list(
         feed_size=10,
         feed_days=7,
         cold_start_limit=5,
-        personalized_interest_weight=1.0,
+        feed_pc_share_weight=1.0,
+        feed_pc_size_weight=0.0,
         personalized_popularity_weight=0.0,
         personalized_recency_weight=0.0,
         cold_start_popularity_weight=1.0,

@@ -81,7 +81,7 @@ PAIRWISE_PARAMS: list[list[str | bool | int | float]] = [
     [1, 2, 5],
     # --bookmark-weight: weight for bookmarked posts
     [1.0, 2.0],
-    # --personalized-interest-weight: interest component weight (sum with popularity+recency = 1.0)
+    # --feed-pc-share-weight: share of interest mass (sum with size+popularity+recency = 1.0); size fixed at 0.05 in CLI builder
     [0.3, 0.5, 0.7],
     # --ctr-enabled: enable CTR scoring
     [True, False],
@@ -131,7 +131,7 @@ PARAM_NAMES = [
     "feed_days",
     "feed_score_multiplier",
     "bookmark_weight",
-    "personalized_interest_weight",
+    "feed_pc_share_weight",
     "ctr_enabled",
     "pagerank_enabled",
     # Group C: Batch and concurrency
@@ -216,7 +216,7 @@ def _build_cli_args(
     feed_days: int,
     feed_score_multiplier: int,
     bookmark_weight: float,
-    personalized_interest_weight: float,
+    feed_pc_share_weight: float,
     ctr_enabled: bool,
     pagerank_enabled: bool,
     # Group C: Batch and concurrency
@@ -275,9 +275,11 @@ def _build_cli_args(
     args.extend(["--feed-days", str(feed_days)])
     args.extend(["--feed-score-multiplier", str(feed_score_multiplier)])
     args.extend(["--bookmark-weight", str(bookmark_weight)])
-    args.extend(["--personalized-interest-weight", str(personalized_interest_weight)])
+    feed_pc_size_pairwise = 0.05
+    args.extend(["--feed-pc-share-weight", str(feed_pc_share_weight)])
+    args.extend(["--feed-pc-size-weight", str(feed_pc_size_pairwise)])
     # Calculate remaining weights to sum to 1.0
-    remaining_weight = 1.0 - personalized_interest_weight
+    remaining_weight = 1.0 - feed_pc_share_weight - feed_pc_size_pairwise
     args.extend(["--personalized-popularity-weight", str(round(remaining_weight * 0.6, 6))])
     args.extend(["--personalized-recency-weight", str(round(remaining_weight * 0.4, 6))])
     if ctr_enabled:
@@ -528,7 +530,7 @@ def test_pairwise_cli_subprocess(
     feed_days: int,
     feed_score_multiplier: int,
     bookmark_weight: float,
-    personalized_interest_weight: float,
+    feed_pc_share_weight: float,
     ctr_enabled: bool,
     pagerank_enabled: bool,
     # Group C: Batch and concurrency
@@ -581,7 +583,7 @@ def test_pairwise_cli_subprocess(
         feed_days=feed_days,
         feed_score_multiplier=feed_score_multiplier,
         bookmark_weight=bookmark_weight,
-        personalized_interest_weight=personalized_interest_weight,
+        feed_pc_share_weight=feed_pc_share_weight,
         ctr_enabled=ctr_enabled,
         pagerank_enabled=pagerank_enabled,
         batch_size=batch_size,

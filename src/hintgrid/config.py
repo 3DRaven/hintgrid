@@ -70,12 +70,22 @@ DEFAULT_FEED_SIZE = 500
 DEFAULT_FEED_DAYS = 7
 DEFAULT_FEED_TTL = "none"
 DEFAULT_FEED_SCORE_MULTIPLIER = 2
-DEFAULT_PERSONALIZED_INTEREST_WEIGHT = 0.5
+DEFAULT_FEED_PC_SHARE_WEIGHT = 0.45
+DEFAULT_FEED_PC_SIZE_WEIGHT = 0.05
 DEFAULT_PERSONALIZED_POPULARITY_WEIGHT = 0.3
 DEFAULT_PERSONALIZED_RECENCY_WEIGHT = 0.2
 DEFAULT_COLD_START_POPULARITY_WEIGHT = 0.7
 DEFAULT_COLD_START_RECENCY_WEIGHT = 0.3
 DEFAULT_POPULARITY_SMOOTHING = 1.0
+DEFAULT_FEED_POPULARITY_MODE: Literal["local", "global", "blended"] = "local"
+# Global popularity composite weights (favourites / reblogs / replies on Post); must sum to 1.0.
+DEFAULT_GLOBAL_POPULARITY_FAVOURITES_WEIGHT = 1.0 / 3.0
+DEFAULT_GLOBAL_POPULARITY_REBLOGS_WEIGHT = 1.0 / 3.0
+DEFAULT_GLOBAL_POPULARITY_REPLIES_WEIGHT = 1.0 / 3.0
+# Blended mode: weights on log10(local) vs log10(global); must sum to 1.0.
+DEFAULT_FEED_POPULARITY_BLEND_LOCAL = 0.5
+DEFAULT_FEED_POPULARITY_BLEND_GLOBAL = 0.5
+DEFAULT_GLOBAL_POPULARITY_SMOOTHING = 1.0
 DEFAULT_RECENCY_SMOOTHING = 1.0
 DEFAULT_RECENCY_NUMERATOR = 1.0
 DEFAULT_COLD_START_FALLBACK = "global_top"
@@ -301,12 +311,37 @@ class HintGridSettings(BaseSettings):
     feed_days: int = Field(default=DEFAULT_FEED_DAYS)
     feed_ttl: str = Field(default=DEFAULT_FEED_TTL)
     feed_score_multiplier: int = Field(default=DEFAULT_FEED_SCORE_MULTIPLIER)
-    personalized_interest_weight: float = Field(default=DEFAULT_PERSONALIZED_INTEREST_WEIGHT)
+    feed_pc_share_weight: float = Field(default=DEFAULT_FEED_PC_SHARE_WEIGHT, ge=0.0)
+    feed_pc_size_weight: float = Field(default=DEFAULT_FEED_PC_SIZE_WEIGHT, ge=0.0)
     personalized_popularity_weight: float = Field(default=DEFAULT_PERSONALIZED_POPULARITY_WEIGHT)
     personalized_recency_weight: float = Field(default=DEFAULT_PERSONALIZED_RECENCY_WEIGHT)
     cold_start_popularity_weight: float = Field(default=DEFAULT_COLD_START_POPULARITY_WEIGHT)
     cold_start_recency_weight: float = Field(default=DEFAULT_COLD_START_RECENCY_WEIGHT)
     popularity_smoothing: float = Field(default=DEFAULT_POPULARITY_SMOOTHING, gt=0.0)
+    feed_popularity_mode: Literal["local", "global", "blended"] = Field(
+        default=DEFAULT_FEED_POPULARITY_MODE,
+    )
+    global_popularity_favourites_weight: float = Field(
+        default=DEFAULT_GLOBAL_POPULARITY_FAVOURITES_WEIGHT,
+        ge=0.0,
+    )
+    global_popularity_reblogs_weight: float = Field(
+        default=DEFAULT_GLOBAL_POPULARITY_REBLOGS_WEIGHT,
+        ge=0.0,
+    )
+    global_popularity_replies_weight: float = Field(
+        default=DEFAULT_GLOBAL_POPULARITY_REPLIES_WEIGHT,
+        ge=0.0,
+    )
+    feed_popularity_blend_local: float = Field(
+        default=DEFAULT_FEED_POPULARITY_BLEND_LOCAL,
+        ge=0.0,
+    )
+    feed_popularity_blend_global: float = Field(
+        default=DEFAULT_FEED_POPULARITY_BLEND_GLOBAL,
+        ge=0.0,
+    )
+    global_popularity_smoothing: float = Field(default=DEFAULT_GLOBAL_POPULARITY_SMOOTHING, gt=0.0)
     recency_smoothing: float = Field(default=DEFAULT_RECENCY_SMOOTHING, gt=0.0)
     recency_numerator: float = Field(default=DEFAULT_RECENCY_NUMERATOR)
     cold_start_fallback: str = Field(default=DEFAULT_COLD_START_FALLBACK)
@@ -366,7 +401,8 @@ FEED_DEBUG_SETTING_FIELD_NAMES: tuple[str, ...] = (
     "feed_ttl",
     "feed_score_multiplier",
     "feed_score_decimals",
-    "personalized_interest_weight",
+    "feed_pc_share_weight",
+    "feed_pc_size_weight",
     "personalized_popularity_weight",
     "personalized_recency_weight",
     "cold_start_popularity_weight",
@@ -374,6 +410,13 @@ FEED_DEBUG_SETTING_FIELD_NAMES: tuple[str, ...] = (
     "cold_start_limit",
     "cold_start_fallback",
     "popularity_smoothing",
+    "feed_popularity_mode",
+    "global_popularity_favourites_weight",
+    "global_popularity_reblogs_weight",
+    "global_popularity_replies_weight",
+    "feed_popularity_blend_local",
+    "feed_popularity_blend_global",
+    "global_popularity_smoothing",
     "recency_smoothing",
     "recency_numerator",
     "language_match_weight",
@@ -725,14 +768,16 @@ def validate_settings(settings: HintGridSettings) -> None:
 
     # Scoring weights (should sum to ~1.0)
     personalized_sum = (
-        settings.personalized_interest_weight
+        settings.feed_pc_share_weight
+        + settings.feed_pc_size_weight
         + settings.personalized_popularity_weight
         + settings.personalized_recency_weight
     )
     if abs(personalized_sum - 1.0) > 0.01:
         errors.append(
             f"Personalized weights should sum to 1.0, got {personalized_sum:.2f} "
-            f"(interest={settings.personalized_interest_weight}, "
+            f"(feed_pc_share={settings.feed_pc_share_weight}, "
+            f"feed_pc_size={settings.feed_pc_size_weight}, "
             f"popularity={settings.personalized_popularity_weight}, "
             f"recency={settings.personalized_recency_weight})"
         )
@@ -744,6 +789,30 @@ def validate_settings(settings: HintGridSettings) -> None:
             f"(popularity={settings.cold_start_popularity_weight}, "
             f"recency={settings.cold_start_recency_weight})"
         )
+
+    valid_feed_popularity_modes = ("local", "global", "blended")
+    if settings.feed_popularity_mode not in valid_feed_popularity_modes:
+        errors.append(
+            f"feed_popularity_mode must be one of {valid_feed_popularity_modes}, "
+            f"got {settings.feed_popularity_mode!r}"
+        )
+    global_pop_sum = (
+        settings.global_popularity_favourites_weight
+        + settings.global_popularity_reblogs_weight
+        + settings.global_popularity_replies_weight
+    )
+    if abs(global_pop_sum - 1.0) > 0.01:
+        errors.append(
+            "global_popularity_favourites_weight + global_popularity_reblogs_weight + "
+            f"global_popularity_replies_weight should sum to 1.0, got {global_pop_sum:.4f}"
+        )
+    if settings.feed_popularity_mode == "blended":
+        blend_sum = settings.feed_popularity_blend_local + settings.feed_popularity_blend_global
+        if abs(blend_sum - 1.0) > 0.01:
+            errors.append(
+                "feed_popularity_blend_local + feed_popularity_blend_global should sum to 1.0 "
+                f"when feed_popularity_mode is blended, got {blend_sum:.4f}"
+            )
 
     # Serendipity
     if not 0 <= settings.serendipity_probability <= 1:

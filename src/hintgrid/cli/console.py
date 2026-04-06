@@ -385,14 +385,22 @@ _SETTINGS_GROUPS: list[tuple[str, str, list[str]]] = [
             "feed_ttl",
             "feed_score_multiplier",
             "feed_score_decimals",
-            "personalized_interest_weight",
+            "feed_pc_share_weight",
+            "feed_pc_size_weight",
             "personalized_popularity_weight",
             "personalized_recency_weight",
             "cold_start_popularity_weight",
             "cold_start_recency_weight",
             "cold_start_fallback",
             "cold_start_limit",
+            "feed_popularity_mode",
+            "global_popularity_favourites_weight",
+            "global_popularity_reblogs_weight",
+            "global_popularity_replies_weight",
+            "feed_popularity_blend_local",
+            "feed_popularity_blend_global",
             "popularity_smoothing",
+            "global_popularity_smoothing",
             "recency_smoothing",
             "recency_numerator",
             "active_user_days",
@@ -1186,14 +1194,16 @@ def print_recommendations_table(
 
         # Score components
         interest_score = rec.get("interest_score", 0.0)
-        popularity = rec.get("popularity", 0)
+        local_raw = rec.get("local_raw", 0.0)
+        global_raw = rec.get("global_raw", 0.0)
+        popularity_contrib = rec.get("popularity_contrib", 0.0)
         age_hours = rec.get("age_hours", 0.0)
         pagerank = rec.get("pagerank", 0.0)
         language_match = rec.get("language_match", 0.0)
 
         components_str = (
             f"interest:{interest_score:.2f} "
-            f"pop:{popularity} "
+            f"L:{local_raw:.1f} G:{global_raw:.1f} pc:{popularity_contrib:.3f} "
             f"age:{age_hours:.1f}h "
             f"pr:{pagerank:.3f} "
             f"lang:{language_match:.2f}"

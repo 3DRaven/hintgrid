@@ -792,12 +792,20 @@ MentionsWeightOpt = Annotated[
         envvar="HINTGRID_MENTIONS_WEIGHT",
     ),
 ]
-PersonalizedInterestWeightOpt = Annotated[
+FeedPcShareWeightOpt = Annotated[
     float | None,
     typer.Option(
-        help="Interest component weight in personalized feed score. "
-        "Sum of interest+popularity+recency must equal 1.0. [default: 0.5]",
-        envvar="HINTGRID_PERSONALIZED_INTEREST_WEIGHT",
+        help="Weight on normalized interest share (i.score / sum_i over UC) in personalized feed. "
+        "Sum of feed_pc_share + feed_pc_size + popularity + recency must equal 1.0. [default: 0.45]",
+        envvar="HINTGRID_FEED_PC_SHARE_WEIGHT",
+    ),
+]
+FeedPcSizeWeightOpt = Annotated[
+    float | None,
+    typer.Option(
+        help="Weight on normalized PostCommunity size (vs max among user's PCs) in personalized feed. "
+        "[default: 0.05]",
+        envvar="HINTGRID_FEED_PC_SIZE_WEIGHT",
     ),
 ]
 PersonalizedPopularityWeightOpt = Annotated[
@@ -835,6 +843,63 @@ PopularitySmoothingOpt = Annotated[
         help="Smoothing factor for popularity score calculation. "
         "Prevents zero-division with low interaction counts. [default: 1.0]",
         envvar="HINTGRID_POPULARITY_SMOOTHING",
+    ),
+]
+FeedPopularityModeOpt = Annotated[
+    str | None,
+    typer.Option(
+        "--feed-popularity-mode",
+        help="Popularity mode: local (weighted graph counts), global (Post total* composite), "
+        "blended (mix of log-local and log-global). [default: local]",
+        envvar="HINTGRID_FEED_POPULARITY_MODE",
+    ),
+]
+GlobalPopularityFavouritesWeightOpt = Annotated[
+    float | None,
+    typer.Option(
+        "--global-popularity-favourites-weight",
+        help="Weight for totalFavourites in global composite; gf+gr+grp must sum to 1.0.",
+        envvar="HINTGRID_GLOBAL_POPULARITY_FAVOURITES_WEIGHT",
+    ),
+]
+GlobalPopularityReblogsWeightOpt = Annotated[
+    float | None,
+    typer.Option(
+        "--global-popularity-reblogs-weight",
+        help="Weight for totalReblogs in global composite; gf+gr+grp must sum to 1.0.",
+        envvar="HINTGRID_GLOBAL_POPULARITY_REBLOGS_WEIGHT",
+    ),
+]
+GlobalPopularityRepliesWeightOpt = Annotated[
+    float | None,
+    typer.Option(
+        "--global-popularity-replies-weight",
+        help="Weight for totalReplies in global composite; gf+gr+grp must sum to 1.0.",
+        envvar="HINTGRID_GLOBAL_POPULARITY_REPLIES_WEIGHT",
+    ),
+]
+FeedPopularityBlendLocalOpt = Annotated[
+    float | None,
+    typer.Option(
+        "--feed-popularity-blend-local",
+        help="Blended mode: weight on log10(local); must sum to 1.0 with blend-global.",
+        envvar="HINTGRID_FEED_POPULARITY_BLEND_LOCAL",
+    ),
+]
+FeedPopularityBlendGlobalOpt = Annotated[
+    float | None,
+    typer.Option(
+        "--feed-popularity-blend-global",
+        help="Blended mode: weight on log10(global); must sum to 1.0 with blend-local.",
+        envvar="HINTGRID_FEED_POPULARITY_BLEND_GLOBAL",
+    ),
+]
+GlobalPopularitySmoothingOpt = Annotated[
+    float | None,
+    typer.Option(
+        "--global-popularity-smoothing",
+        help="Smoothing inside log10 for global popularity in global/blended modes. [default: 1.0]",
+        envvar="HINTGRID_GLOBAL_POPULARITY_SMOOTHING",
     ),
 ]
 RecencySmoothingOpt = Annotated[
@@ -1186,12 +1251,20 @@ def run(
     follows_weight: FollowsWeightOpt = None,
     mentions_weight: MentionsWeightOpt = None,
     bookmark_weight: BookmarkWeightOpt = None,
-    personalized_interest_weight: PersonalizedInterestWeightOpt = None,
+    feed_pc_share_weight: FeedPcShareWeightOpt = None,
+    feed_pc_size_weight: FeedPcSizeWeightOpt = None,
     personalized_popularity_weight: PersonalizedPopularityWeightOpt = None,
     personalized_recency_weight: PersonalizedRecencyWeightOpt = None,
     cold_start_popularity_weight: ColdStartPopularityWeightOpt = None,
     cold_start_recency_weight: ColdStartRecencyWeightOpt = None,
     popularity_smoothing: PopularitySmoothingOpt = None,
+    feed_popularity_mode: FeedPopularityModeOpt = None,
+    global_popularity_favourites_weight: GlobalPopularityFavouritesWeightOpt = None,
+    global_popularity_reblogs_weight: GlobalPopularityReblogsWeightOpt = None,
+    global_popularity_replies_weight: GlobalPopularityRepliesWeightOpt = None,
+    feed_popularity_blend_local: FeedPopularityBlendLocalOpt = None,
+    feed_popularity_blend_global: FeedPopularityBlendGlobalOpt = None,
+    global_popularity_smoothing: GlobalPopularitySmoothingOpt = None,
     recency_smoothing: RecencySmoothingOpt = None,
     recency_numerator: RecencyNumeratorOpt = None,
     ctr_enabled: CtrEnabledOpt = None,
@@ -1318,12 +1391,20 @@ def run(
         follows_weight=follows_weight,
         mentions_weight=mentions_weight,
         bookmark_weight=bookmark_weight,
-        personalized_interest_weight=personalized_interest_weight,
+        feed_pc_share_weight=feed_pc_share_weight,
+        feed_pc_size_weight=feed_pc_size_weight,
         personalized_popularity_weight=personalized_popularity_weight,
         personalized_recency_weight=personalized_recency_weight,
         cold_start_popularity_weight=cold_start_popularity_weight,
         cold_start_recency_weight=cold_start_recency_weight,
         popularity_smoothing=popularity_smoothing,
+        feed_popularity_mode=feed_popularity_mode,
+        global_popularity_favourites_weight=global_popularity_favourites_weight,
+        global_popularity_reblogs_weight=global_popularity_reblogs_weight,
+        global_popularity_replies_weight=global_popularity_replies_weight,
+        feed_popularity_blend_local=feed_popularity_blend_local,
+        feed_popularity_blend_global=feed_popularity_blend_global,
+        global_popularity_smoothing=global_popularity_smoothing,
         recency_smoothing=recency_smoothing,
         recency_numerator=recency_numerator,
         ctr_enabled=ctr_enabled,
@@ -1582,7 +1663,8 @@ def export(
     follows_weight: FollowsWeightOpt = None,
     mentions_weight: MentionsWeightOpt = None,
     bookmark_weight: BookmarkWeightOpt = None,
-    personalized_interest_weight: PersonalizedInterestWeightOpt = None,
+    feed_pc_share_weight: FeedPcShareWeightOpt = None,
+    feed_pc_size_weight: FeedPcSizeWeightOpt = None,
     personalized_popularity_weight: PersonalizedPopularityWeightOpt = None,
     personalized_recency_weight: PersonalizedRecencyWeightOpt = None,
     cold_start_popularity_weight: ColdStartPopularityWeightOpt = None,
@@ -1714,7 +1796,8 @@ def export(
         follows_weight=follows_weight,
         mentions_weight=mentions_weight,
         bookmark_weight=bookmark_weight,
-        personalized_interest_weight=personalized_interest_weight,
+        feed_pc_share_weight=feed_pc_share_weight,
+        feed_pc_size_weight=feed_pc_size_weight,
         personalized_popularity_weight=personalized_popularity_weight,
         personalized_recency_weight=personalized_recency_weight,
         cold_start_popularity_weight=cold_start_popularity_weight,
@@ -1870,7 +1953,8 @@ def train(
     follows_weight: FollowsWeightOpt = None,
     mentions_weight: MentionsWeightOpt = None,
     bookmark_weight: BookmarkWeightOpt = None,
-    personalized_interest_weight: PersonalizedInterestWeightOpt = None,
+    feed_pc_share_weight: FeedPcShareWeightOpt = None,
+    feed_pc_size_weight: FeedPcSizeWeightOpt = None,
     personalized_popularity_weight: PersonalizedPopularityWeightOpt = None,
     personalized_recency_weight: PersonalizedRecencyWeightOpt = None,
     cold_start_popularity_weight: ColdStartPopularityWeightOpt = None,
@@ -2010,7 +2094,8 @@ def train(
         follows_weight=follows_weight,
         mentions_weight=mentions_weight,
         bookmark_weight=bookmark_weight,
-        personalized_interest_weight=personalized_interest_weight,
+        feed_pc_share_weight=feed_pc_share_weight,
+        feed_pc_size_weight=feed_pc_size_weight,
         personalized_popularity_weight=personalized_popularity_weight,
         personalized_recency_weight=personalized_recency_weight,
         cold_start_popularity_weight=cold_start_popularity_weight,
@@ -2192,7 +2277,8 @@ def clean(
     follows_weight: FollowsWeightOpt = None,
     mentions_weight: MentionsWeightOpt = None,
     bookmark_weight: BookmarkWeightOpt = None,
-    personalized_interest_weight: PersonalizedInterestWeightOpt = None,
+    feed_pc_share_weight: FeedPcShareWeightOpt = None,
+    feed_pc_size_weight: FeedPcSizeWeightOpt = None,
     personalized_popularity_weight: PersonalizedPopularityWeightOpt = None,
     personalized_recency_weight: PersonalizedRecencyWeightOpt = None,
     cold_start_popularity_weight: ColdStartPopularityWeightOpt = None,
@@ -2329,7 +2415,8 @@ def clean(
         follows_weight=follows_weight,
         mentions_weight=mentions_weight,
         bookmark_weight=bookmark_weight,
-        personalized_interest_weight=personalized_interest_weight,
+        feed_pc_share_weight=feed_pc_share_weight,
+        feed_pc_size_weight=feed_pc_size_weight,
         personalized_popularity_weight=personalized_popularity_weight,
         personalized_recency_weight=personalized_recency_weight,
         cold_start_popularity_weight=cold_start_popularity_weight,
@@ -2485,7 +2572,8 @@ def get_user_info_cmd(
     follows_weight: FollowsWeightOpt = None,
     mentions_weight: MentionsWeightOpt = None,
     bookmark_weight: BookmarkWeightOpt = None,
-    personalized_interest_weight: PersonalizedInterestWeightOpt = None,
+    feed_pc_share_weight: FeedPcShareWeightOpt = None,
+    feed_pc_size_weight: FeedPcSizeWeightOpt = None,
     personalized_popularity_weight: PersonalizedPopularityWeightOpt = None,
     personalized_recency_weight: PersonalizedRecencyWeightOpt = None,
     cold_start_popularity_weight: ColdStartPopularityWeightOpt = None,
@@ -2618,7 +2706,8 @@ def get_user_info_cmd(
         follows_weight=follows_weight,
         mentions_weight=mentions_weight,
         bookmark_weight=bookmark_weight,
-        personalized_interest_weight=personalized_interest_weight,
+        feed_pc_share_weight=feed_pc_share_weight,
+        feed_pc_size_weight=feed_pc_size_weight,
         personalized_popularity_weight=personalized_popularity_weight,
         personalized_recency_weight=personalized_recency_weight,
         cold_start_popularity_weight=cold_start_popularity_weight,
@@ -2771,7 +2860,8 @@ def get_post_info_cmd(
     follows_weight: FollowsWeightOpt = None,
     mentions_weight: MentionsWeightOpt = None,
     bookmark_weight: BookmarkWeightOpt = None,
-    personalized_interest_weight: PersonalizedInterestWeightOpt = None,
+    feed_pc_share_weight: FeedPcShareWeightOpt = None,
+    feed_pc_size_weight: FeedPcSizeWeightOpt = None,
     personalized_popularity_weight: PersonalizedPopularityWeightOpt = None,
     personalized_recency_weight: PersonalizedRecencyWeightOpt = None,
     cold_start_popularity_weight: ColdStartPopularityWeightOpt = None,
@@ -2904,7 +2994,8 @@ def get_post_info_cmd(
         follows_weight=follows_weight,
         mentions_weight=mentions_weight,
         bookmark_weight=bookmark_weight,
-        personalized_interest_weight=personalized_interest_weight,
+        feed_pc_share_weight=feed_pc_share_weight,
+        feed_pc_size_weight=feed_pc_size_weight,
         personalized_popularity_weight=personalized_popularity_weight,
         personalized_recency_weight=personalized_recency_weight,
         cold_start_popularity_weight=cold_start_popularity_weight,
@@ -3051,7 +3142,8 @@ def validate(
     follows_weight: FollowsWeightOpt = None,
     mentions_weight: MentionsWeightOpt = None,
     bookmark_weight: BookmarkWeightOpt = None,
-    personalized_interest_weight: PersonalizedInterestWeightOpt = None,
+    feed_pc_share_weight: FeedPcShareWeightOpt = None,
+    feed_pc_size_weight: FeedPcSizeWeightOpt = None,
     personalized_popularity_weight: PersonalizedPopularityWeightOpt = None,
     personalized_recency_weight: PersonalizedRecencyWeightOpt = None,
     cold_start_popularity_weight: ColdStartPopularityWeightOpt = None,
@@ -3183,7 +3275,8 @@ def validate(
         follows_weight=follows_weight,
         mentions_weight=mentions_weight,
         bookmark_weight=bookmark_weight,
-        personalized_interest_weight=personalized_interest_weight,
+        feed_pc_share_weight=feed_pc_share_weight,
+        feed_pc_size_weight=feed_pc_size_weight,
         personalized_popularity_weight=personalized_popularity_weight,
         personalized_recency_weight=personalized_recency_weight,
         cold_start_popularity_weight=cold_start_popularity_weight,
@@ -3441,7 +3534,8 @@ def reindex(
     follows_weight: FollowsWeightOpt = None,
     mentions_weight: MentionsWeightOpt = None,
     bookmark_weight: BookmarkWeightOpt = None,
-    personalized_interest_weight: PersonalizedInterestWeightOpt = None,
+    feed_pc_share_weight: FeedPcShareWeightOpt = None,
+    feed_pc_size_weight: FeedPcSizeWeightOpt = None,
     personalized_popularity_weight: PersonalizedPopularityWeightOpt = None,
     personalized_recency_weight: PersonalizedRecencyWeightOpt = None,
     cold_start_popularity_weight: ColdStartPopularityWeightOpt = None,
@@ -3573,7 +3667,8 @@ def reindex(
         follows_weight=follows_weight,
         mentions_weight=mentions_weight,
         bookmark_weight=bookmark_weight,
-        personalized_interest_weight=personalized_interest_weight,
+        feed_pc_share_weight=feed_pc_share_weight,
+        feed_pc_size_weight=feed_pc_size_weight,
         personalized_popularity_weight=personalized_popularity_weight,
         personalized_recency_weight=personalized_recency_weight,
         cold_start_popularity_weight=cold_start_popularity_weight,

@@ -11,6 +11,12 @@ if TYPE_CHECKING:
     from hintgrid.clients.redis import RedisClient
 
 from hintgrid.cli.console import console
+from hintgrid.config import HintGridSettings
+from hintgrid.pipeline.feed_queries import (
+    build_stats_avg_popularity_query,
+    build_stats_popular_post_query,
+    popularity_score_params,
+)
 from hintgrid.pipeline.post_info import FeedTopPostEntry, get_feed_top_post_entries
 from hintgrid.utils.coercion import coerce_float, coerce_int, coerce_str
 
@@ -1005,6 +1011,7 @@ def show_post_community_stats(
     neo4j: Neo4jClient,
     postgres: PostgresClient | None = None,
     modularity: float | None = None,
+    settings: HintGridSettings | None = None,
 ) -> None:
     """Display post community statistics after clustering using Rich.
 
@@ -1012,8 +1019,12 @@ def show_post_community_stats(
         neo4j: Neo4j client
         postgres: PostgreSQL client for fetching user account info (optional)
         modularity: Modularity value from Leiden algorithm (optional)
+        settings: Feed popularity configuration (defaults to env-loaded settings)
     """
     from rich.panel import Panel
+
+    if settings is None:
+        settings = HintGridSettings()
 
     stats = _collect_post_community_stats(neo4j)
 
@@ -1072,21 +1083,19 @@ def show_post_community_stats(
             coerce_int(row.get("id")): coerce_int(row.get("size")) for row in top_result
         }
 
+        rel_types = neo4j.get_existing_rel_types()
+        popular_query = build_stats_popular_post_query(rel_types, settings)
+        base_pop_params = popularity_score_params(settings)
+
         # Batch: most popular post per community
         popular_map: dict[int, dict[str, Neo4jValue]] = {}
         for cid in comm_ids:
+            pop_params: dict[str, float | int] = {"comm_id": cid, **base_pop_params}
             result_rows = list(
                 neo4j.execute_and_fetch_labeled(
-                    "MATCH (pc:__pc__ {id: $comm_id})"
-                    "<-[:BELONGS_TO]-(p:__post__) "
-                    "WITH p, COALESCE(p.totalFavourites, 0) "
-                    "+ COALESCE(p.totalReblogs, 0) "
-                    "+ COALESCE(p.totalReplies, 0) AS popularity "
-                    "ORDER BY popularity DESC LIMIT 1 "
-                    "RETURN p.id AS post_id, p.text AS post_text,"
-                    " popularity",
+                    popular_query,
                     {"pc": "PostCommunity", "post": "Post"},
-                    {"comm_id": cid},
+                    pop_params,
                 )
             )
             if result_rows:
@@ -1110,19 +1119,16 @@ def show_post_community_stats(
             if result_rows:
                 author_map[cid] = result_rows[0]
 
-        # Batch: average popularity per community
+        # Batch: average popularity_contrib per community (same model as feed)
+        avg_query = build_stats_avg_popularity_query(rel_types, settings)
         avg_pop_map: dict[int, float] = {}
         for cid in comm_ids:
+            avg_params: dict[str, float | int] = {"comm_id": cid, **base_pop_params}
             result_rows = list(
                 neo4j.execute_and_fetch_labeled(
-                    "MATCH (pc:__pc__ {id: $comm_id})"
-                    "<-[:BELONGS_TO]-(p:__post__) "
-                    "WITH p, COALESCE(p.totalFavourites, 0) "
-                    "+ COALESCE(p.totalReblogs, 0) "
-                    "+ COALESCE(p.totalReplies, 0) AS popularity "
-                    "RETURN avg(popularity) AS avg_popularity",
+                    avg_query,
                     {"pc": "PostCommunity", "post": "Post"},
-                    {"comm_id": cid},
+                    avg_params,
                 )
             )
             if result_rows:
@@ -1173,12 +1179,15 @@ def show_post_community_stats(
             popular_data = popular_map.get(cid)
             if popular_data:
                 post_id = coerce_int(popular_data.get("post_id"))
-                popularity = coerce_int(popular_data.get("popularity", 0))
+                popularity_contrib = coerce_float(popular_data.get("popularity_contrib", 0.0))
                 post_text = popular_data.get("post_text")
                 formatted_text = _format_post_text(
                     coerce_str(post_text) if post_text else None,
                 )
-                lines.append(f"{sub_prefix}  Popular: post {post_id} ({popularity:,} interactions)")
+                lines.append(
+                    f"{sub_prefix}  Popular: post {post_id} "
+                    f"(popularity_contrib={popularity_contrib:.3f})"
+                )
                 lines.append(f"{sub_prefix}  Text: {formatted_text}")
 
             author_data = author_map.get(cid)
@@ -1202,7 +1211,7 @@ def show_post_community_stats(
             avg_popularity = avg_pop_map.get(cid)
             if avg_popularity is not None:
                 lines.append(
-                    f"{sub_prefix}  Avg popularity: {avg_popularity:.1f} interactions/post"
+                    f"{sub_prefix}  Avg popularity_contrib: {avg_popularity:.3f} post"
                 )
 
             languages_data = lang_map.get(cid)
