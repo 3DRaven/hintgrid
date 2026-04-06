@@ -393,8 +393,8 @@ def test_cli_get_user_info(
     )
     monkeypatch.setattr(app_module, "HintGridSettings", lambda: test_settings)
 
-    # Load data into Neo4j first
-    exit_code = run_cli(monkeypatch, ["run", "--dry-run"])
+    # Full pipeline so Redis home feeds exist for feed preview in get-user-info
+    exit_code = run_cli(monkeypatch, ["run"])
     assert exit_code == 0
 
     exit_code = run_cli(monkeypatch, ["get-user-info", "@alice"])
@@ -403,6 +403,9 @@ def test_cli_get_user_info(
     assert "User Information" in output
     assert "101" in output
     assert "@alice" in output or "alice" in output
+    assert "Home feed (Redis)" in output
+    assert "Redis score (feed)" in output
+    assert "Post Information (home feed #1)" in output
 
     exit_code = run_cli(monkeypatch, ["get-user-info", "@bob@Mastodon.Social"])
     assert exit_code == 0

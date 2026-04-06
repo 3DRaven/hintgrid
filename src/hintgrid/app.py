@@ -142,7 +142,7 @@ class HintGridApp:
             (
                 "similarity_pruning",
                 "Similarity pruning",
-                lambda progress: run_similarity_pruning(self.neo4j, self.settings),
+                lambda progress: run_similarity_pruning(self.neo4j, self.settings, progress),
             ),
             (
                 "interests",

@@ -770,6 +770,7 @@ def print_user_info_table(user_info: UserInfo) -> None:
             "follows_count",
             "followers_count",
             "posts_count",
+            "feed_top_posts",
         ]
     )
 
@@ -909,15 +910,39 @@ def print_user_info_table(user_info: UserInfo) -> None:
         console.print(activity_table)
         console.print()
 
+    # Home feed preview (Redis top posts, same detail as get-post-info)
+    feed_top = user_info.get("feed_top_posts")
+    if feed_top:
+        console.print(
+            "[bold cyan]Home feed (Redis)[/bold cyan] — top posts by score from "
+            "`feed:home:<account_id>` (see docs)."
+        )
+        console.print()
+        for rank, entry in enumerate(feed_top, start=1):
+            score = float(entry["redis_score"])
+            pinfo: PostInfo = entry["post_info"]
+            print_post_info_table(
+                pinfo,
+                title=f"[bold]Post Information (home feed #{rank})[/bold]",
+                redis_score=score,
+            )
 
-def print_post_info_table(post_info: PostInfo) -> None:
+
+def print_post_info_table(
+    post_info: PostInfo,
+    *,
+    title: str = "[bold]Post Information[/bold]",
+    redis_score: float | None = None,
+) -> None:
     """Print post information table using Rich.
 
     Args:
         post_info: Post information dictionary
+        title: Rich table title
+        redis_score: Optional Redis ZSET score (home feed diagnostics)
     """
     table = Table(
-        title="[bold]Post Information[/bold]",
+        title=title,
         border_style="cyan",
         show_header=True,
         header_style="bold",
@@ -925,6 +950,9 @@ def print_post_info_table(post_info: PostInfo) -> None:
     )
     table.add_column("Property", style="cyan", no_wrap=True)
     table.add_column("Value", style="white")
+
+    if redis_score is not None:
+        table.add_row("Redis score (feed)", f"{redis_score:,.0f}")
 
     post_id = post_info.get("post_id")
     if post_id is not None:

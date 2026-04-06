@@ -435,12 +435,41 @@ class Neo4jClient(AbstractContextManager["Neo4jClient"]):
                 except (TypeError, ValueError):
                     continue
 
-    def prune_similarity_links(self, settings: HintGridSettings) -> None:
-        """Prune SIMILAR_TO relationships based on pruning strategy."""
+    def prune_similarity_links(
+        self,
+        settings: HintGridSettings,
+        *,
+        progress: HintGridProgress | None = None,
+    ) -> None:
+        """Prune SIMILAR_TO relationships based on pruning strategy.
+
+        When ``progress`` is set (e.g. full analytics run), runs a COUNT query and
+        uses Neo4j ProgressTracker + Rich polling for batched deletes, matching
+        other cleanup/deletion steps.
+        """
         if settings.similarity_pruning == "aggressive":
-            self.delete_all_similar_to_relationships(
-                batch_size=settings.apoc_batch_size,
+            aggressive_iterate: LiteralString = (
+                "MATCH (p:__post__)-[r:SIMILAR_TO]->() RETURN id(r) AS rid"
             )
+            aggressive_count: LiteralString = (
+                "MATCH (p:__post__)-[r:SIMILAR_TO]->() RETURN count(r) AS total"
+            )
+            if progress is None:
+                self.delete_all_similar_to_relationships(
+                    batch_size=settings.apoc_batch_size,
+                )
+            else:
+                self._run_similar_to_prune_with_progress(
+                    iterate_query=aggressive_iterate,
+                    count_query=aggressive_count,
+                    params=None,
+                    batch_size=settings.apoc_batch_size,
+                    log_label="SIMILAR_TO bulk delete",
+                    task_description="[cyan]Pruning SIMILAR_TO (aggressive)...",
+                    done_description="[green]✓ SIMILAR_TO pruned (aggressive)",
+                    progress=progress,
+                    settings=settings,
+                )
             return
 
         if settings.similarity_pruning == "partial":
@@ -448,12 +477,30 @@ class Neo4jClient(AbstractContextManager["Neo4jClient"]):
                 "MATCH (p:__post__)-[r:SIMILAR_TO]->() "
                 "WHERE r.weight < $threshold RETURN id(r) AS rid"
             )
-            self._delete_similar_to_by_rel_id_batches(
-                partial_iterate,
-                settings.apoc_batch_size,
-                params={"threshold": settings.prune_similarity_threshold},
-                log_label="SIMILAR_TO partial pruning",
+            partial_count: LiteralString = (
+                "MATCH (p:__post__)-[r:SIMILAR_TO]->() "
+                "WHERE r.weight < $threshold RETURN count(r) AS total"
             )
+            partial_params = {"threshold": settings.prune_similarity_threshold}
+            if progress is None:
+                self._delete_similar_to_by_rel_id_batches(
+                    partial_iterate,
+                    settings.apoc_batch_size,
+                    params=partial_params,
+                    log_label="SIMILAR_TO partial pruning",
+                )
+            else:
+                self._run_similar_to_prune_with_progress(
+                    iterate_query=partial_iterate,
+                    count_query=partial_count,
+                    params=partial_params,
+                    batch_size=settings.apoc_batch_size,
+                    log_label="SIMILAR_TO partial pruning",
+                    task_description="[cyan]Pruning SIMILAR_TO (partial)...",
+                    done_description="[green]✓ SIMILAR_TO pruned (partial)",
+                    progress=progress,
+                    settings=settings,
+                )
             return
 
         if settings.similarity_pruning == "temporal":
@@ -462,15 +509,85 @@ class Neo4jClient(AbstractContextManager["Neo4jClient"]):
                 "WHERE p.createdAt < datetime() - duration({days: $days}) "
                 "RETURN id(r) AS rid"
             )
-            self._delete_similar_to_by_rel_id_batches(
-                temporal_iterate,
-                settings.apoc_batch_size,
-                params={"days": settings.prune_days},
-                log_label="SIMILAR_TO temporal pruning",
+            temporal_count: LiteralString = (
+                "MATCH (p:__post__)-[r:SIMILAR_TO]->() "
+                "WHERE p.createdAt < datetime() - duration({days: $days}) "
+                "RETURN count(r) AS total"
             )
+            temporal_params = {"days": settings.prune_days}
+            if progress is None:
+                self._delete_similar_to_by_rel_id_batches(
+                    temporal_iterate,
+                    settings.apoc_batch_size,
+                    params=temporal_params,
+                    log_label="SIMILAR_TO temporal pruning",
+                )
+            else:
+                self._run_similar_to_prune_with_progress(
+                    iterate_query=temporal_iterate,
+                    count_query=temporal_count,
+                    params=temporal_params,
+                    batch_size=settings.apoc_batch_size,
+                    log_label="SIMILAR_TO temporal pruning",
+                    task_description="[cyan]Pruning SIMILAR_TO (temporal)...",
+                    done_description="[green]✓ SIMILAR_TO pruned (temporal)",
+                    progress=progress,
+                    settings=settings,
+                )
             return
 
         logger.info("Similarity pruning disabled (strategy=%s)", settings.similarity_pruning)
+
+    def _run_similar_to_prune_with_progress(
+        self,
+        *,
+        iterate_query: LiteralString,
+        count_query: LiteralString,
+        params: Mapping[str, Neo4jParameter] | None,
+        batch_size: int,
+        log_label: str,
+        task_description: str,
+        done_description: str,
+        progress: HintGridProgress,
+        settings: HintGridSettings,
+    ) -> None:
+        """COUNT + ProgressTracker + batched delete for similarity pruning (Rich UI)."""
+        count_rows = self.execute_and_fetch_labeled(
+            count_query,
+            {"post": "Post"},
+            dict(params) if params else {},
+        )
+        total = coerce_int(count_rows[0].get("total", 0)) if count_rows else 0
+
+        operation_id = f"similarity_prune_{uuid.uuid4().hex[:8]}"
+        self.create_progress_tracker(operation_id, total)
+        task_id = progress.add_task(
+            task_description,
+            total=float(total),
+        )
+        from hintgrid.cli.console import track_periodic_iterate_progress
+
+        polling_thread = track_periodic_iterate_progress(
+            self,
+            operation_id,
+            progress,
+            task_id,
+            poll_interval=settings.progress_poll_interval_seconds,
+        )
+
+        try:
+            self._delete_similar_to_by_rel_id_batches(
+                iterate_query,
+                batch_size,
+                params=params,
+                log_label=log_label,
+                progress_tracker_id=operation_id,
+            )
+        finally:
+            polling_thread.stop_event.set()
+            polling_thread.join(timeout=2.0)
+            self.cleanup_progress_tracker(operation_id)
+            progress.update(task_id, description=done_description)
 
     def _delete_similar_to_by_rel_id_batches(
         self,
@@ -479,6 +596,7 @@ class Neo4jClient(AbstractContextManager["Neo4jClient"]):
         *,
         params: Mapping[str, Neo4jParameter] | None = None,
         log_label: str = "SIMILAR_TO batch delete",
+        progress_tracker_id: str | None = None,
     ) -> None:
         """Delete SIMILAR_TO edges in batches via ``apoc.periodic.iterate``.
 
@@ -502,6 +620,7 @@ class Neo4jClient(AbstractContextManager["Neo4jClient"]):
             parallel=False,
             batch_mode="BATCH",
             params=params,
+            progress_tracker_id=progress_tracker_id,
         )
         failed = coerce_int(result.get("failedOperations", 0))
         if failed > 0:

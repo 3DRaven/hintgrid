@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, LiteralString, TypedDict
 if TYPE_CHECKING:
     from hintgrid.clients.neo4j import Neo4jClient
     from hintgrid.clients.postgres import PostgresClient
+    from hintgrid.clients.redis import RedisClient
 
 from hintgrid.utils.coercion import coerce_float, coerce_int, coerce_str
 
@@ -39,6 +40,13 @@ class PostInfo(TypedDict, total=False):
     total_reblogs: int | None
     total_replies: int | None
     pagerank: float | None
+
+
+class FeedTopPostEntry(TypedDict):
+    """Top post from Redis home feed with full post diagnostics."""
+
+    redis_score: float
+    post_info: PostInfo
 
 
 _VISIBILITY_NAMES: dict[int, str] = {
@@ -185,3 +193,47 @@ def get_extended_post_info(
         "pagerank": pagerank,
     }
     return info
+
+
+def get_feed_top_post_entries(
+    redis: RedisClient,
+    neo4j: Neo4jClient,
+    postgres: PostgresClient,
+    user_id: int,
+    *,
+    limit: int = 3,
+) -> list[FeedTopPostEntry]:
+    """Load top *limit* posts from ``feed:home:{user_id}`` with full ``PostInfo``.
+
+    Uses Redis sort order (highest score first). Entries missing from Neo4j
+    are skipped (same as ``get-post-info``).
+
+    Args:
+        redis: Redis client
+        neo4j: Neo4j client
+        postgres: PostgreSQL client
+        user_id: Mastodon account id (home feed owner)
+        limit: Max posts to return (default 3)
+
+    Returns:
+        List of feed entries with Redis score and extended post info.
+    """
+    key = f"feed:home:{user_id}"
+    items = redis.zrevrange_with_scores(key, 0, limit - 1)
+    out: list[FeedTopPostEntry] = []
+    for member_b, score in items:
+        raw = member_b.decode("utf-8") if isinstance(member_b, bytes) else str(member_b)
+        try:
+            post_id = int(raw)
+        except (TypeError, ValueError):
+            continue
+        info = get_extended_post_info(neo4j, postgres, post_id)
+        if info is None:
+            continue
+        out.append(
+            FeedTopPostEntry(
+                redis_score=float(score),
+                post_info=info,
+            )
+        )
+    return out

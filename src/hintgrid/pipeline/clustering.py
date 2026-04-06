@@ -456,7 +456,11 @@ def run_post_clustering(
     show_post_community_stats(neo4j, postgres=None, modularity=modularity)
 
 
-def run_similarity_pruning(neo4j: Neo4jClient, settings: HintGridSettings) -> None:
+def run_similarity_pruning(
+    neo4j: Neo4jClient,
+    settings: HintGridSettings,
+    progress: HintGridProgress | None = None,
+) -> None:
     """Prune SIMILAR_TO relationships as a separate pipeline step.
 
     Runs after PageRank so that PageRank can use the similarity graph.
@@ -472,7 +476,7 @@ def run_similarity_pruning(neo4j: Neo4jClient, settings: HintGridSettings) -> No
         f"[bold magenta]Similarity Pruning[/bold magenta] "
         f"[dim](strategy={settings.similarity_pruning})[/dim]"
     )
-    neo4j.prune_similarity_links(settings)
+    neo4j.prune_similarity_links(settings, progress=progress)
     print_success("Similarity pruning completed")
 
 

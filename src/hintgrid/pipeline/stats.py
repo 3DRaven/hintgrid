@@ -8,8 +8,10 @@ from typing import TYPE_CHECKING, LiteralString, TypedDict
 if TYPE_CHECKING:
     from hintgrid.clients.neo4j import Neo4jClient, Neo4jValue
     from hintgrid.clients.postgres import PostgresClient
+    from hintgrid.clients.redis import RedisClient
 
 from hintgrid.cli.console import console
+from hintgrid.pipeline.post_info import FeedTopPostEntry, get_feed_top_post_entries
 from hintgrid.utils.coercion import coerce_float, coerce_int, coerce_str
 
 
@@ -59,6 +61,7 @@ class UserInfo(TypedDict, total=False):
     follows_count: int | None  # Исходящие подписки
     followers_count: int | None  # Входящие подписки
     posts_count: int | None  # Количество постов пользователя
+    feed_top_posts: list[FeedTopPostEntry] | None  # Top posts from Redis home feed
 
 
 logger = logging.getLogger(__name__)
@@ -1311,7 +1314,12 @@ def get_user_info(neo4j: Neo4jClient, postgres: PostgresClient, user_id: int) ->
 
 
 def get_extended_user_info(
-    neo4j: Neo4jClient, postgres: PostgresClient, user_id: int
+    neo4j: Neo4jClient,
+    postgres: PostgresClient,
+    user_id: int,
+    *,
+    redis: RedisClient | None = None,
+    feed_preview_limit: int = 3,
 ) -> UserInfo | None:
     """Get extended user information from Neo4j and PostgreSQL.
 
@@ -1320,6 +1328,7 @@ def get_extended_user_info(
     - Top interests (PostCommunity with highest scores)
     - Interaction statistics (favorites, reblogs, replies, bookmarks)
     - Posts count
+    - Optional top posts from Redis ``feed:home:{user_id}`` (when *redis* is set)
 
     Note: Follows/followers counts are not available as FOLLOWS relationships
     are not stored separately in Neo4j (they are included in INTERACTS_WITH).
@@ -1328,6 +1337,8 @@ def get_extended_user_info(
         neo4j: Neo4j client for graph data
         postgres: PostgreSQL client for account data
         user_id: User account ID
+        redis: Optional Redis client for home feed preview
+        feed_preview_limit: Number of top feed posts to resolve (default 3)
 
     Returns:
         Extended UserInfo dictionary or None if user not found in Neo4j
@@ -1446,6 +1457,16 @@ def get_extended_user_info(
     if posts_result:
         posts_count = coerce_int(posts_result[0].get("posts_count", 0))
 
+    feed_top_posts: list[FeedTopPostEntry] | None = None
+    if redis is not None:
+        feed_top_posts = get_feed_top_post_entries(
+            redis,
+            neo4j,
+            postgres,
+            user_id,
+            limit=feed_preview_limit,
+        )
+
     # Build extended user info
     extended_info: UserInfo = {
         **user_info,
@@ -1456,6 +1477,7 @@ def get_extended_user_info(
         "follows_count": follows_count,
         "followers_count": followers_count,
         "posts_count": posts_count,
+        "feed_top_posts": feed_top_posts,
     }
 
     return extended_info

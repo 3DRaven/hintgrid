@@ -348,7 +348,12 @@ def execute_get_user_info(
                 return EXIT_ERROR
 
             # Get extended user info
-            user_info = get_extended_user_info(app.neo4j, app.postgres, user_id_result)
+            user_info = get_extended_user_info(
+                app.neo4j,
+                app.postgres,
+                user_id_result,
+                redis=app.redis,
+            )
             if user_info is None:
                 print_error("User not found in database")
                 return EXIT_ERROR
