@@ -121,6 +121,28 @@ class TestValidateSettings:
             validate_settings(settings)
         assert "fasttext_vector_size" in str(exc_info.value)
 
+    def test_invalid_fasttext_quantize_qdim_not_divisor_when_quantize_enabled(self) -> None:
+        """PQ requires vector_size divisible by quantize_qdim when quantize is on."""
+        settings = HintGridSettings(
+            fasttext_vector_size=128,
+            fasttext_quantize=True,
+            fasttext_quantize_qdim=100,
+        )
+        with pytest.raises(ConfigurationError) as exc_info:
+            validate_settings(settings)
+        err = str(exc_info.value)
+        assert "divisible" in err
+        assert "product quantization" in err or "compress-fasttext" in err
+
+    def test_valid_fasttext_quantize_qdim_divisor_when_quantize_enabled(self) -> None:
+        """Valid PQ pair (128 / 64) should pass validation."""
+        settings = HintGridSettings(
+            fasttext_vector_size=128,
+            fasttext_quantize=True,
+            fasttext_quantize_qdim=64,
+        )
+        validate_settings(settings)
+
     def test_invalid_batch_size_zero(self) -> None:
         """Zero batch_size should raise ConfigurationError."""
         settings = HintGridSettings(batch_size=0)
@@ -447,11 +469,12 @@ class TestCheckEmbeddingConfig:
         assert new_state.embedding_signature == "fasttext:nomic-embed-text:128"
 
         # Verify stale embeddings were actually cleared
-        remaining = list(neo4j.execute_and_fetch_labeled(
-            "MATCH (p:__post__) WHERE p.embedding IS NOT NULL "
-            "RETURN count(p) AS count",
-            {"post": "Post"},
-        ))
+        remaining = list(
+            neo4j.execute_and_fetch_labeled(
+                "MATCH (p:__post__) WHERE p.embedding IS NOT NULL RETURN count(p) AS count",
+                {"post": "Post"},
+            )
+        )
         remaining_count = coerce_int(remaining[0]["count"]) if remaining else 0
         assert remaining_count == 0, "All stale embeddings must be cleared"
 

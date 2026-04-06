@@ -39,7 +39,7 @@ DEFAULT_FASTTEXT_BUCKET = 10000  # Reduced from 2M for memory efficiency
 DEFAULT_FASTTEXT_MIN_DOCUMENTS = 100  # Minimum docs to start training
 DEFAULT_FASTTEXT_MODEL_PATH = "~/.hintgrid/models"  # Model storage path
 DEFAULT_FASTTEXT_QUANTIZE = True  # Enable model quantization (10-50x size reduction)
-DEFAULT_FASTTEXT_QUANTIZE_QDIM = 100  # Quantization dimensions
+DEFAULT_FASTTEXT_QUANTIZE_QDIM = 64  # PQ subquantizers; must divide fasttext_vector_size
 DEFAULT_BATCH_SIZE = 10_000
 DEFAULT_LOAD_SINCE: str | None = None
 DEFAULT_MAX_RETRIES = 3
@@ -499,6 +499,16 @@ def validate_settings(settings: HintGridSettings) -> None:
         errors.append(
             f"fasttext_quantize_qdim ({settings.fasttext_quantize_qdim}) must be <= "
             f"fasttext_vector_size ({settings.fasttext_vector_size})"
+        )
+    if settings.fasttext_quantize and (
+        settings.fasttext_vector_size % settings.fasttext_quantize_qdim != 0
+    ):
+        errors.append(
+            "fasttext_vector_size must be divisible by fasttext_quantize_qdim when "
+            "fasttext_quantize is enabled (product quantization / compress-fasttext). "
+            f"Got vector_size={settings.fasttext_vector_size}, "
+            f"quantize_qdim={settings.fasttext_quantize_qdim}. "
+            "Choose a divisor of vector_size (e.g. 16, 32, 64, or 128 for size 128)."
         )
     if settings.fasttext_training_workers < 0:
         errors.append(

@@ -60,8 +60,7 @@ PostgresPortOpt = Annotated[
 PostgresDatabaseOpt = Annotated[
     str | None,
     typer.Option(
-        help="PostgreSQL database name containing Mastodon tables. "
-        "[default: mastodon_production]",
+        help="PostgreSQL database name containing Mastodon tables. [default: mastodon_production]",
         envvar="HINTGRID_POSTGRES_DATABASE",
     ),
 ]
@@ -371,15 +370,15 @@ FasttextQuantizeOpt = Annotated[
 FasttextQuantizeQdimOpt = Annotated[
     int | None,
     typer.Option(
-        help="Quantization target dimensions. Must be <= vector_size. [default: 100]",
+        help="PQ subquantizer count (compress-fasttext). Must be <= vector_size and divide "
+        "vector_size when --fasttext-quantize is on. [default: 64]",
         envvar="HINTGRID_FASTTEXT_QUANTIZE_QDIM",
     ),
 ]
 FasttextTrainingWorkersOpt = Annotated[
     int | None,
     typer.Option(
-        help="CPU threads for FastText training (0 = auto-detect via os.cpu_count()). "
-        "[default: 0]",
+        help="CPU threads for FastText training (0 = auto-detect via os.cpu_count()). [default: 0]",
         envvar="HINTGRID_FASTTEXT_TRAINING_WORKERS",
     ),
 ]
@@ -681,8 +680,7 @@ FeedForceRefreshOpt = Annotated[
 LanguageMatchWeightOpt = Annotated[
     float | None,
     typer.Option(
-        help="Weight boost for posts matching chosen_languages (not UI locale). "
-        "[default: 0.3]",
+        help="Weight boost for posts matching chosen_languages (not UI locale). [default: 0.3]",
         envvar="HINTGRID_LANGUAGE_MATCH_WEIGHT",
     ),
 ]
@@ -983,8 +981,7 @@ GraphSampleLimitOpt = Annotated[
 LogLevelOpt = Annotated[
     str | None,
     typer.Option(
-        help="Logging verbosity level. "
-        "[default: INFO] [values: DEBUG|INFO|WARNING|ERROR|CRITICAL]",
+        help="Logging verbosity level. [default: INFO] [values: DEBUG|INFO|WARNING|ERROR|CRITICAL]",
         envvar="HINTGRID_LOG_LEVEL",
     ),
 ]
@@ -1007,7 +1004,8 @@ ProgressPollIntervalSecondsOpt = Annotated[
 VerboseOpt = Annotated[
     bool,
     typer.Option(
-        "-v", "--verbose",
+        "-v",
+        "--verbose",
         help="Enable verbose output: sets log level to DEBUG and shows full "
         "stack traces on errors. CLI-only flag.",
         envvar="HINTGRID_VERBOSE",
@@ -2046,12 +2044,8 @@ def train(
 
 @app.command()
 def clean(
-    graph: Annotated[
-        bool, typer.Option("--graph", help="Clean Neo4j graph data only")
-    ] = False,
-    redis_flag: Annotated[
-        bool, typer.Option("--redis", help="Clean Redis feed data only")
-    ] = False,
+    graph: Annotated[bool, typer.Option("--graph", help="Clean Neo4j graph data only")] = False,
+    redis_flag: Annotated[bool, typer.Option("--redis", help="Clean Redis feed data only")] = False,
     models: Annotated[
         bool, typer.Option("--models", help="Clean model files on disk only")
     ] = False,
@@ -2059,16 +2053,25 @@ def clean(
         bool, typer.Option("--embeddings", help="Clear post embeddings (cascades to similarity)")
     ] = False,
     clusters: Annotated[
-        bool, typer.Option("--clusters", help="Clear user and post clusters (cascades to interests and recommendations)")
+        bool,
+        typer.Option(
+            "--clusters",
+            help="Clear user and post clusters (cascades to interests and recommendations)",
+        ),
     ] = False,
     similarity: Annotated[
-        bool, typer.Option("--similarity", help="Clear SIMILAR_TO relationships (cascades to post clusters and interests)")
+        bool,
+        typer.Option(
+            "--similarity",
+            help="Clear SIMILAR_TO relationships (cascades to post clusters and interests)",
+        ),
     ] = False,
     interests: Annotated[
         bool, typer.Option("--interests", help="Clear INTERESTED_IN relationships")
     ] = False,
     interactions: Annotated[
-        bool, typer.Option("--interactions", help="Clear INTERACTS_WITH relationships between users")
+        bool,
+        typer.Option("--interactions", help="Clear INTERACTS_WITH relationships between users"),
     ] = False,
     recommendations: Annotated[
         bool, typer.Option("--recommendations", help="Clear WAS_RECOMMENDED relationships")
@@ -2636,9 +2639,7 @@ def get_user_info_cmd(
         progress_poll_interval_seconds=progress_poll_interval_seconds,
     )
 
-    exit_code = execute_get_user_info(
-        overrides=overrides, handle=handle, verbose=verbose
-    )
+    exit_code = execute_get_user_info(overrides=overrides, handle=handle, verbose=verbose)
     raise typer.Exit(code=exit_code)
 
 

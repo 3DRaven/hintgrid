@@ -149,17 +149,44 @@ PARAM_NAMES = [
 # 36 parameters total: 15 original + 21 new (added follows_weight, mentions_weight)
 PairwiseTuple = tuple[
     # Original 15
-    bool, str, bool, str, str, str, str, float, int, float, int, float, float, float, float,
+    bool,
+    str,
+    bool,
+    str,
+    str,
+    str,
+    str,
+    float,
+    int,
+    float,
+    int,
+    float,
+    float,
+    float,
+    float,
     # New weights (2)
-    float, float,
+    float,
+    float,
     # Group A: FastText (3)
-    int, bool, int,
+    int,
+    bool,
+    int,
     # Group B: Feed and scoring (6)
-    int, int, float, float, bool, bool,
+    int,
+    int,
+    float,
+    float,
+    bool,
+    bool,
     # Group C: Batch and concurrency (3)
-    int, int, int,
+    int,
+    int,
+    int,
     # Group D: Pruning and clustering (4)
-    float, int, int, int,
+    float,
+    int,
+    int,
+    int,
 ]
 
 
@@ -234,8 +261,8 @@ def _build_cli_args(
     args.extend(["--fasttext-vector-size", str(fasttext_vector_size)])
     if fasttext_quantize:
         args.append("--fasttext-quantize")
-        # Ensure qdim <= vector_size when quantize is enabled
-        qdim = min(100, fasttext_vector_size)  # Default is 100, but must be <= vector_size
+        # PQ (compress-fasttext) requires vector_size % qdim == 0; using full dim is always valid
+        qdim = fasttext_vector_size
         args.extend(["--fasttext-quantize-qdim", str(qdim)])
     else:
         args.append("--no-fasttext-quantize")

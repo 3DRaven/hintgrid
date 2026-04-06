@@ -62,8 +62,7 @@ def test_cli_run_writes_redis(
     # Check that at least some feeds were created
     # (not all users may have recommendations)
     feed_counts = [
-        redis_raw.zcard(f"feed:home:{user_id}")
-        for user_id in sample_data_for_cli["user_ids"]
+        redis_raw.zcard(f"feed:home:{user_id}") for user_id in sample_data_for_cli["user_ids"]
     ]
     total_feeds = sum(feed_counts)
     assert total_feeds > 0, (
@@ -162,43 +161,38 @@ def test_cli_dry_run_then_export_has_graph_no_redis(
     exit_code = run_cli(monkeypatch, ["run", "--dry-run"])
     assert exit_code == 0
 
-
     user_result = neo4j.execute_and_fetch_labeled(
         "MATCH (u:__user__) RETURN count(u) AS count",
         {"user": "User"},
     )
     user_count = coerce_int((user_result[0] if user_result else {}).get("count"))
-    
+
     post_result = neo4j.execute_and_fetch_labeled(
         "MATCH (p:__post__) RETURN count(p) AS count",
         {"post": "Post"},
     )
     post_count = coerce_int((post_result[0] if post_result else {}).get("count"))
-    
+
     user_communities_result = neo4j.execute_and_fetch_labeled(
-        "MATCH (:__user__)-[:BELONGS_TO]->(:__uc__) "
-        "RETURN count(*) AS count",
+        "MATCH (:__user__)-[:BELONGS_TO]->(:__uc__) RETURN count(*) AS count",
         {"user": "User", "uc": "UserCommunity"},
     )
     user_communities = (user_communities_result[0] if user_communities_result else {}).get("count")
-    
+
     post_communities_result = neo4j.execute_and_fetch_labeled(
-        "MATCH (:__post__)-[:BELONGS_TO]->(:__pc__) "
-        "RETURN count(*) AS count",
+        "MATCH (:__post__)-[:BELONGS_TO]->(:__pc__) RETURN count(*) AS count",
         {"post": "Post", "pc": "PostCommunity"},
     )
     post_communities = (post_communities_result[0] if post_communities_result else {}).get("count")
-    
+
     interests_result = neo4j.execute_and_fetch_labeled(
-        "MATCH (:__uc__)-[i:INTERESTED_IN]->(:__pc__) "
-        "RETURN count(i) AS count",
+        "MATCH (:__uc__)-[i:INTERESTED_IN]->(:__pc__) RETURN count(i) AS count",
         {"uc": "UserCommunity", "pc": "PostCommunity"},
     )
     interests = (interests_result[0] if interests_result else {}).get("count")
-    
+
     clustered_posts_result = neo4j.execute_and_fetch_labeled(
-        "MATCH (p:__post__) WHERE p.cluster_id IS NOT NULL "
-        "RETURN count(p) AS count",
+        "MATCH (p:__post__) WHERE p.cluster_id IS NOT NULL RETURN count(p) AS count",
         {"post": "Post"},
     )
     clustered_posts = (clustered_posts_result[0] if clustered_posts_result else {}).get("count")
@@ -261,13 +255,13 @@ def test_cli_run_then_export_includes_feed_rows(
     # Get all entries to verify rank-based scoring
     all_rows = redis_raw.zrevrange(feed_key, 0, -1, withscores=True)
     assert len(all_rows) > 0
-    
+
     # Extract post IDs and scores
     post_ids = [coerce_int(post_id_raw) for post_id_raw, _ in all_rows]
     max_post_id = max(post_ids)
     total = len(all_rows)
     base = max_post_id * settings.feed_score_multiplier
-    
+
     # Verify rank-based scoring: redis_score = base + (N - rank)
     # rank 0 = most interesting (first in zrevrange) → highest score
     for rank, (post_id_raw, score) in enumerate(all_rows):
@@ -320,9 +314,7 @@ def test_cli_clean_removes_hintgrid_entries(
     # Point settings to the temporary model directory
     # Explicit runtime use of HintGridSettings
     assert isinstance(test_settings, HintGridSettings)
-    test_settings = test_settings.model_copy(
-        update={"fasttext_model_path": str(model_dir)}
-    )
+    test_settings = test_settings.model_copy(update={"fasttext_model_path": str(model_dir)})
     monkeypatch.setenv("HINTGRID_FASTTEXT_MODEL_PATH", str(model_dir))
     monkeypatch.setattr(app_module, "HintGridSettings", lambda: test_settings)
 
@@ -457,13 +449,13 @@ def test_cli_run_fasttext_quantize_disabled(
         {"user": "User"},
     )
     user_count = coerce_int((user_result[0] if user_result else {}).get("count"))
-    
+
     post_result = neo4j.execute_and_fetch_labeled(
         "MATCH (p:__post__) RETURN count(p) AS count",
         {"post": "Post"},
     )
     post_count = coerce_int((post_result[0] if post_result else {}).get("count"))
-    
+
     assert user_count == len(sample_data_for_cli["user_ids"])
     assert post_count == 5
 
@@ -491,7 +483,7 @@ def test_cli_run_fasttext_custom_vector_size(
     )
     monkeypatch.setattr(app_module, "HintGridSettings", lambda: test_settings)
 
-    # fasttext_quantize_qdim must be <= fasttext_vector_size
+    # qdim must be <= vector_size and divide vector_size (PQ) when quantize is on
     exit_code = run_cli(
         monkeypatch,
         ["run", "--fasttext-vector-size", "64", "--fasttext-quantize-qdim", "64"],
@@ -504,13 +496,13 @@ def test_cli_run_fasttext_custom_vector_size(
         {"user": "User"},
     )
     user_count = coerce_int((user_result[0] if user_result else {}).get("count"))
-    
+
     post_result = neo4j.execute_and_fetch_labeled(
         "MATCH (p:__post__) RETURN count(p) AS count",
         {"post": "Post"},
     )
     post_count = coerce_int((post_result[0] if post_result else {}).get("count"))
-    
+
     assert user_count == len(sample_data_for_cli["user_ids"])
     assert post_count == 5
 
@@ -548,13 +540,13 @@ def test_cli_run_fasttext_min_documents_threshold(
         {"user": "User"},
     )
     user_count = coerce_int((user_result[0] if user_result else {}).get("count"))
-    
+
     post_result = neo4j.execute_and_fetch_labeled(
         "MATCH (p:__post__) RETURN count(p) AS count",
         {"post": "Post"},
     )
     post_count = coerce_int((post_result[0] if post_result else {}).get("count"))
-    
+
     assert user_count == len(sample_data_for_cli["user_ids"])
     assert post_count == 5
 
@@ -674,8 +666,7 @@ def test_cli_run_bookmark_weight_impact(
     # Verify interests were created
     interests = list(
         neo4j.execute_and_fetch_labeled(
-            "MATCH (:__uc__)-[i:INTERESTED_IN]->(:__pc__) "
-            "RETURN count(i) AS count",
+            "MATCH (:__uc__)-[i:INTERESTED_IN]->(:__pc__) RETURN count(i) AS count",
             {"uc": "UserCommunity", "pc": "PostCommunity"},
         )
     )
@@ -974,13 +965,13 @@ def test_cli_run_parallel_loader_workers(
         {"user": "User"},
     )
     user_count = coerce_int((user_result[0] if user_result else {}).get("count"))
-    
+
     post_result = neo4j.execute_and_fetch_labeled(
         "MATCH (p:__post__) RETURN count(p) AS count",
         {"post": "Post"},
     )
     post_count = coerce_int((post_result[0] if post_result else {}).get("count"))
-    
+
     assert user_count == len(sample_data_for_cli["user_ids"])
     assert post_count == 5
 
@@ -1017,13 +1008,13 @@ def test_cli_run_custom_batch_size(
         {"user": "User"},
     )
     user_count = coerce_int((user_result[0] if user_result else {}).get("count"))
-    
+
     post_result = neo4j.execute_and_fetch_labeled(
         "MATCH (p:__post__) RETURN count(p) AS count",
         {"post": "Post"},
     )
     post_count = coerce_int((post_result[0] if post_result else {}).get("count"))
-    
+
     assert user_count == len(sample_data_for_cli["user_ids"])
     assert post_count == 5
 
