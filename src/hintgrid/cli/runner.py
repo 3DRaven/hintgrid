@@ -116,6 +116,7 @@ def _run_with_app(
             state = None
             if app is not None:
                 from contextlib import suppress
+
                 with suppress(Exception):
                     state = app.state_store.load()
             shutdown.display_shutdown_summary(state)
@@ -161,12 +162,16 @@ def execute_run(
                     with console.status("[bold blue]Running incremental training...[/bold blue]"):
                         success = app.train_incremental()
                     if not success:
-                        print_warning("Incremental training failed, continuing with existing models")
+                        print_warning(
+                            "Incremental training failed, continuing with existing models"
+                        )
                     else:
                         print_success("Incremental training completed")
 
                 app.run_full_pipeline(
-                    dry_run=dry_run, user_id=user_id, shutdown=shutdown,
+                    dry_run=dry_run,
+                    user_id=user_id,
+                    shutdown=shutdown,
                 )
 
             # After pipeline returns (possibly after graceful shutdown)
@@ -217,11 +222,15 @@ def execute_train(
                 if full:
                     mode = "Full"
                     since_date = _parse_since_date(since)
-                    with console.status(f"[bold blue]Running {mode.lower()} training...[/bold blue]"):
+                    with console.status(
+                        f"[bold blue]Running {mode.lower()} training...[/bold blue]"
+                    ):
                         success = app.train_full(since_date=since_date)
                 else:
                     mode = "Incremental"
-                    with console.status(f"[bold blue]Running {mode.lower()} training...[/bold blue]"):
+                    with console.status(
+                        f"[bold blue]Running {mode.lower()} training...[/bold blue]"
+                    ):
                         success = app.train_incremental()
 
                 print_train_result(success, mode)
@@ -255,8 +264,13 @@ def execute_clean(
     """
     basic_flags = graph or redis or models
     computed_flags = (
-        embeddings or clusters or similarity or interests
-        or interactions or recommendations or fasttext_state
+        embeddings
+        or clusters
+        or similarity
+        or interests
+        or interactions
+        or recommendations
+        or fasttext_state
     )
     clean_all = not basic_flags and not computed_flags
 
@@ -358,7 +372,39 @@ def execute_get_user_info(
                 print_error("User not found in database")
                 return EXIT_ERROR
 
-            # Print user info table
+            from hintgrid.cli.feed_debug_print import print_feed_settings_snapshot
+            from hintgrid.config import feed_debug_settings_snapshot
+            from hintgrid.pipeline.feed_explain import explain_feed_inclusion
+
+            print_feed_settings_snapshot(feed_debug_settings_snapshot(app.settings))
+
+            feed_top = user_info.get("feed_top_posts")
+            if feed_top:
+                rel_types = app.neo4j.get_existing_rel_types()
+                enriched: list[dict[str, object]] = []
+                for entry in feed_top:
+                    pid_raw = entry["post_info"].get("post_id")
+                    if pid_raw is None:
+                        continue
+                    pid = int(pid_raw)
+                    ex = explain_feed_inclusion(
+                        app.neo4j,
+                        app.redis,
+                        user_id_result,
+                        pid,
+                        app.settings,
+                        rel_types=rel_types,
+                    )
+                    item: dict[str, object] = {
+                        "redis_score": entry["redis_score"],
+                        "post_info": entry["post_info"],
+                    }
+                    if ex is not None:
+                        item["feed_explanation"] = ex
+                    enriched.append(item)
+                user_info["feed_top_posts"] = enriched  # type: ignore[assignment]
+
+            # Print user info table (includes per-post feed explanations when present)
             print_user_info_table(user_info)
             return EXIT_OK
 
@@ -369,6 +415,7 @@ def execute_get_post_info(
     overrides: dict[str, object],
     post_ref: str,
     verbose: bool,
+    viewer: str | None = None,
 ) -> int:
     """Execute the 'get-post-info' command."""
 
@@ -376,6 +423,12 @@ def execute_get_post_info(
         @staticmethod
         def execute(app: HintGridApp) -> int:
             from hintgrid.cli.console import print_post_info_table
+            from hintgrid.cli.feed_debug_print import (
+                print_feed_inclusion_explanation,
+                print_feed_settings_snapshot,
+            )
+            from hintgrid.config import feed_debug_settings_snapshot
+            from hintgrid.pipeline.feed_explain import explain_feed_inclusion
             from hintgrid.pipeline.post_info import get_extended_post_info
 
             resolved, resolve_err = app.postgres.resolve_status_id(post_ref)
@@ -392,6 +445,27 @@ def execute_get_post_info(
                 return EXIT_ERROR
 
             print_post_info_table(post_info)
+
+            if viewer is not None:
+                print_feed_settings_snapshot(feed_debug_settings_snapshot(app.settings))
+                viewer_id = app.get_user_id(viewer)
+                if viewer_id is None:
+                    print_error("Viewer user not found")
+                    return EXIT_ERROR
+                rel_types = app.neo4j.get_existing_rel_types()
+                ex = explain_feed_inclusion(
+                    app.neo4j,
+                    app.redis,
+                    viewer_id,
+                    resolved,
+                    app.settings,
+                    rel_types=rel_types,
+                )
+                if ex is None:
+                    print_error("Could not explain inclusion (missing user or post in graph)")
+                    return EXIT_ERROR
+                print_feed_inclusion_explanation(ex)
+
             return EXIT_OK
 
     return _run_with_app(overrides, verbose, GetPostInfoHandler)
@@ -486,9 +560,7 @@ def execute_model_import(
         def execute(app: HintGridApp) -> int:
             with MemoryMonitor(interval_seconds=memory_interval):
                 archive = Path(archive_path)
-                with console.status(
-                    "[bold blue]Importing model bundle...[/bold blue]"
-                ):
+                with console.status("[bold blue]Importing model bundle...[/bold blue]"):
                     result = import_bundle(
                         settings=app.settings,
                         neo4j=app.neo4j,
@@ -522,9 +594,7 @@ def execute_refresh(
         @staticmethod
         def execute(app: HintGridApp) -> int:
             with MemoryMonitor(interval_seconds=memory_interval):
-                with console.status(
-                    "[bold blue]Refreshing interests...[/bold blue]"
-                ):
+                with console.status("[bold blue]Refreshing interests...[/bold blue]"):
                     app.run_refresh()
                 print_success("Interest refresh complete")
             return EXIT_OK
@@ -544,7 +614,11 @@ def execute_reindex(
         @staticmethod
         def execute(app: HintGridApp) -> int:
             with MemoryMonitor(interval_seconds=memory_interval):
-                status_msg = "[bold yellow]Analyzing...[/bold yellow]" if dry_run else "[bold blue]Reindexing embeddings...[/bold blue]"
+                status_msg = (
+                    "[bold yellow]Analyzing...[/bold yellow]"
+                    if dry_run
+                    else "[bold blue]Reindexing embeddings...[/bold blue]"
+                )
                 with console.status(status_msg):
                     result = app.reindex_embeddings(dry_run=dry_run)
 

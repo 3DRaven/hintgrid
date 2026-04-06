@@ -359,6 +359,69 @@ class HintGridSettings(BaseSettings):
     progress_poll_interval_seconds: float = Field(default=DEFAULT_PROGRESS_POLL_INTERVAL_SECONDS)
 
 
+# Subset of HintGridSettings fields printed by feed inclusion diagnostics (CLI / explain).
+FEED_DEBUG_SETTING_FIELD_NAMES: tuple[str, ...] = (
+    "feed_size",
+    "feed_days",
+    "feed_ttl",
+    "feed_score_multiplier",
+    "feed_score_decimals",
+    "personalized_interest_weight",
+    "personalized_popularity_weight",
+    "personalized_recency_weight",
+    "cold_start_popularity_weight",
+    "cold_start_recency_weight",
+    "cold_start_limit",
+    "cold_start_fallback",
+    "popularity_smoothing",
+    "recency_smoothing",
+    "recency_numerator",
+    "language_match_weight",
+    "ui_language_match_weight",
+    "pagerank_enabled",
+    "pagerank_weight",
+    "pagerank_damping_factor",
+    "pagerank_max_iterations",
+    "noise_community_id",
+    "interests_ttl_days",
+    "interests_min_favourites",
+    "decay_half_life_days",
+    "likes_weight",
+    "reblogs_weight",
+    "replies_weight",
+    "follows_weight",
+    "mentions_weight",
+    "bookmark_weight",
+    "ctr_enabled",
+    "ctr_weight",
+    "min_ctr",
+    "ctr_smoothing",
+    "serendipity_probability",
+    "serendipity_limit",
+    "serendipity_score",
+    "serendipity_based_on",
+    "community_similarity_enabled",
+    "community_similarity_top_k",
+    "active_user_days",
+    "feed_force_refresh",
+    "redis_namespace",
+)
+
+
+def feed_debug_settings_snapshot(
+    settings: HintGridSettings,
+) -> dict[str, str | int | float | bool | None]:
+    """Return selected settings fields for feed inclusion diagnostics (current values only)."""
+    out: dict[str, str | int | float | bool | None] = {}
+    for name in FEED_DEBUG_SETTING_FIELD_NAMES:
+        raw: object = getattr(settings, name)
+        if isinstance(raw, (str, int, float, bool)) or raw is None:
+            out[name] = raw
+        else:
+            out[name] = str(raw)
+    return out
+
+
 @dataclass(frozen=True)
 class CliOverrides:
     """CLI overrides for settings; any None value is ignored."""

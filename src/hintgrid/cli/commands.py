@@ -2647,6 +2647,12 @@ def get_user_info_cmd(
 @app.command("get-post-info")
 def get_post_info_cmd(
     post_ref: Annotated[str, typer.Argument(help="Post URL, public id from URL, or internal status id")],
+    viewer: str | None = typer.Option(
+        None,
+        "--viewer",
+        "-w",
+        help="Mastodon handle of the account whose home feed to explain (@user or @user@domain)",
+    ),
     memory_interval: MemoryIntervalOpt = 10,
     # PostgreSQL
     postgres_host: PostgresHostOpt = None,
@@ -2914,7 +2920,12 @@ def get_post_info_cmd(
         progress_poll_interval_seconds=progress_poll_interval_seconds,
     )
 
-    exit_code = execute_get_post_info(overrides=overrides, post_ref=post_ref, verbose=verbose)
+    exit_code = execute_get_post_info(
+        overrides=overrides,
+        post_ref=post_ref,
+        verbose=verbose,
+        viewer=viewer,
+    )
     raise typer.Exit(code=exit_code)
 
 

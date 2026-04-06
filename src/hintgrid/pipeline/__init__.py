@@ -11,6 +11,7 @@ from hintgrid.pipeline.feed import (
     write_feed_to_redis,
     write_public_feed_to_redis,
 )
+from hintgrid.pipeline.feed_explain import explain_feed_inclusion
 from hintgrid.pipeline.graph import (
     EmbeddingMigrationResult,
     check_clusters_exist,
@@ -57,6 +58,7 @@ __all__ = [
     "cleanup_inactive_users",
     "count_posts_in_neo4j",
     "ensure_graph_indexes",
+    "explain_feed_inclusion",
     "export_state",
     "force_reindex",
     "generate_public_feed",

@@ -12,6 +12,7 @@ from rich.table import Table
 from hintgrid.utils.coercion import coerce_float, coerce_int, coerce_str
 
 import hintgrid.cli.progress_display as _progress_display
+from hintgrid.cli.feed_debug_print import print_feed_inclusion_explanation
 
 create_batch_progress = _progress_display.create_batch_progress
 create_data_loading_progress = _progress_display.create_data_loading_progress
@@ -926,6 +927,9 @@ def print_user_info_table(user_info: UserInfo) -> None:
                 title=f"[bold]Post Information (home feed #{rank})[/bold]",
                 redis_score=score,
             )
+            fex = entry.get("feed_explanation")
+            if fex is not None:
+                print_feed_inclusion_explanation(fex)
 
 
 def print_post_info_table(

@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from typing import TYPE_CHECKING, LiteralString, TypedDict
+from typing import TYPE_CHECKING, LiteralString, NotRequired, TypedDict
 
 if TYPE_CHECKING:
     from hintgrid.clients.neo4j import Neo4jClient
     from hintgrid.clients.postgres import PostgresClient
     from hintgrid.clients.redis import RedisClient
+    from hintgrid.pipeline.feed_explain import FeedInclusionExplanation
 
 from hintgrid.utils.coercion import coerce_float, coerce_int, coerce_str
 
@@ -47,6 +48,7 @@ class FeedTopPostEntry(TypedDict):
 
     redis_score: float
     post_info: PostInfo
+    feed_explanation: NotRequired["FeedInclusionExplanation"]  # noqa: UP037
 
 
 _VISIBILITY_NAMES: dict[int, str] = {
@@ -222,7 +224,7 @@ def get_feed_top_post_entries(
     items = redis.zrevrange_with_scores(key, 0, limit - 1)
     out: list[FeedTopPostEntry] = []
     for member_b, score in items:
-        raw = member_b.decode("utf-8") if isinstance(member_b, bytes) else str(member_b)
+        raw = member_b.decode("utf-8")
         try:
             post_id = int(raw)
         except (TypeError, ValueError):

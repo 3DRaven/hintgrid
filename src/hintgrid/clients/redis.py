@@ -95,6 +95,20 @@ class RedisClient(AbstractContextManager["RedisClient"]):
         result: list[bytes] = self._client.zrange(name, start, end)
         return result
 
+    def zscore(self, name: str, member: str) -> float | None:
+        """Score of member in sorted set, or None if missing."""
+        raw: float | None = self._client.zscore(name, member)
+        return float(raw) if raw is not None else None
+
+    def zrevrank(self, name: str, member: str) -> int | None:
+        """0-based rank from highest score, or None if missing."""
+        raw: int | None = self._client.zrevrank(name, member)
+        return int(raw) if raw is not None else None
+
+    def zcard(self, name: str) -> int:
+        """Cardinality of sorted set."""
+        return int(self._client.zcard(name))
+
     def zrem(self, name: str, *values: bytes) -> int:
         """Remove elements from sorted set."""
         result: int = self._client.zrem(name, *values)

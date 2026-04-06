@@ -82,7 +82,7 @@ def generate_user_feed(
         "     duration.between(datetime(p.createdAt), datetime()).hours AS age_hours, "
         + pr_bind
         + " "
-        "WITH p, "
+        "WITH u, p, interest_score, popularity, age_hours, pagerank, "
         "     interest_score * $interest_weight + "
         "     log10(popularity + $popularity_smoothing) * $popularity_weight + "
         "     ($recency_numerator / (age_hours / 24.0 + $recency_smoothing)) * $recency_weight + "
@@ -114,7 +114,8 @@ def generate_user_feed(
         )
     )
 
-    # If no personalized results, use cold start (globally popular posts)
+    # If no personalized results, use cold start (globally popular posts).
+    # Cold-start score matches feed_detail.get_detailed_recommendations (pagerank + language).
     if not rows:
         logger.info("Cold start for user %s", user_id)
         cold_start_limit = min(settings.feed_size, settings.cold_start_limit)
@@ -123,10 +124,13 @@ def generate_user_feed(
             "MATCH (p:__post__) "
             "WHERE p.createdAt > datetime() - duration({days: $feed_days}) "
             "  AND p.embedding IS NOT NULL " + filters + "WITH u, p, " + popularity + ", "
-            "     duration.between(datetime(p.createdAt), datetime()).hours AS age_hours "
-            "WITH p, "
+            "     duration.between(datetime(p.createdAt), datetime()).hours AS age_hours, "
+            + pr_bind
+            + " "
+            "WITH u, p, popularity, age_hours, pagerank, "
             "     log10(popularity + $popularity_smoothing) * $popularity_weight + "
             "     ($recency_numerator / (age_hours / 24.0 + $recency_smoothing)) * $recency_weight + "
+            + pr_w
             + language_match_score_case()
             + "AS score "
             "RETURN p.id AS post_id, score "
@@ -142,6 +146,7 @@ def generate_user_feed(
                     "cold_start_limit": cold_start_limit,
                     "popularity_weight": settings.cold_start_popularity_weight,
                     "recency_weight": settings.cold_start_recency_weight,
+                    "pagerank_weight": settings.pagerank_weight if settings.pagerank_enabled else 0.0,
                     "popularity_smoothing": settings.popularity_smoothing,
                     "recency_smoothing": settings.recency_smoothing,
                     "recency_numerator": settings.recency_numerator,
