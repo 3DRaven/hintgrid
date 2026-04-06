@@ -571,6 +571,7 @@ class PostgresClient(AbstractContextManager["PostgresClient"]):
 
         Also returns:
         - is_local: True if account is local (domain IS NULL)
+        - locale: User UI locale from users.locale (for User.uiLanguage in Neo4j)
         - chosen_languages: User's preferred languages from users table
 
         Only returns accounts whose computed last_active falls within
@@ -583,11 +584,13 @@ class PostgresClient(AbstractContextManager["PostgresClient"]):
             fetch_size: Rows per network round-trip (itersize for server-side cursor)
 
         Yields:
-            Row dictionaries with account_id, last_active, is_local, chosen_languages
+            Row dictionaries with account_id, last_active, is_local, locale,
+            chosen_languages
         """
         query = """
             SELECT a.id AS account_id,
                    (a.domain IS NULL) AS is_local,
+                   u.locale,
                    u.chosen_languages,
                    GREATEST(
                        COALESCE(s.last_status_at, a.created_at),

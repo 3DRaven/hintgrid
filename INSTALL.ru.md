@@ -298,7 +298,11 @@ sudo -u hintgrid bash -lc 'cd /opt/hintgrid && /opt/hintgrid/venv/bin/hintgrid c
 
 **`hintgrid clean --redis`** удаляет **только члены ZSET** (не ключи целиком): для каждого **локального** пользователя из графа Neo4j — в `feed:home:<user_id>` убираются элементы, у которых score не совпадает с id поста (в пределах `HINTGRID_REDIS_SCORE_TOLERANCE`); при включённых публичных лентах то же для ключей публичных таймлайнов (`HINTGRID_PUBLIC_TIMELINE_KEY`, `HINTGRID_LOCAL_TIMELINE_KEY`) с учётом `HINTGRID_REDIS_NAMESPACE`. **Neo4j и файлы моделей не трогаются.** Нужен доступ к Neo4j — как при обычном `hintgrid run`.
 
-Интеграционные тесты: `tests/integration/cli/test_clean.py` (`test_cli_clean_redis_only`), полный `hintgrid clean` — `tests/integration/cli/test_basic.py` (`test_cli_clean_removes_hintgrid_entries`).
+Полное удаление всех данных:
+
+```bash
+sudo -u hintgrid bash -lc 'cd /opt/hintgrid && set -a && source .env && set +a && /opt/hintgrid/venv/bin/hintgrid clean'
+```
 
 #### Вручную: выборочный `ZSCAN` / `ZREM`
 

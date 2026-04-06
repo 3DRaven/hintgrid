@@ -109,7 +109,22 @@ def test_update_user_activity_sets_is_local(neo4j: Neo4jClient) -> None:
     """update_user_activity sets isLocal property based on PostgreSQL data."""
     _create_user(neo4j, 50050)
     _create_user(neo4j, 50051)
-    batch: list[dict[str, object]] = [{'account_id': 50050, 'last_active': '2026-02-06T00:00:00Z', 'is_local': True, 'chosen_languages': None}, {'account_id': 50051, 'last_active': '2026-02-06T00:00:00Z', 'is_local': False, 'chosen_languages': None}]
+    batch: list[dict[str, object]] = [
+        {
+            'account_id': 50050,
+            'last_active': '2026-02-06T00:00:00Z',
+            'is_local': True,
+            'ui_language': None,
+            'languages': None,
+        },
+        {
+            'account_id': 50051,
+            'last_active': '2026-02-06T00:00:00Z',
+            'is_local': False,
+            'ui_language': None,
+            'languages': None,
+        },
+    ]
     update_user_activity(neo4j, convert_batch_decimals(batch))
     neo4j.label('User')
     rows = list(neo4j.execute_and_fetch_labeled('MATCH (u:__user__) WHERE u.id IN [50050, 50051] RETURN u.id AS id, u.isLocal AS isLocal ORDER BY u.id', {'user': 'User'}))
@@ -121,11 +136,26 @@ def test_update_user_activity_sets_is_local(neo4j: Neo4jClient) -> None:
 def test_update_user_activity_sets_languages(neo4j: Neo4jClient) -> None:
     """update_user_activity sets languages property from chosen_languages."""
     _create_user(neo4j, 50060)
-    batch: list[dict[str, object]] = [{'account_id': 50060, 'last_active': '2026-02-06T00:00:00Z', 'is_local': True, 'chosen_languages': ['en', 'ru', 'de']}]
+    batch: list[dict[str, object]] = [
+        {
+            'account_id': 50060,
+            'last_active': '2026-02-06T00:00:00Z',
+            'is_local': True,
+            'ui_language': None,
+            'languages': ['en', 'ru', 'de'],
+        }
+    ]
     update_user_activity(neo4j, convert_batch_decimals(batch))
     neo4j.label('User')
-    rows = list(neo4j.execute_and_fetch_labeled('MATCH (u:__user__ {id: 50060}) RETURN u.languages AS languages', {'user': 'User'}))
+    rows = list(
+        neo4j.execute_and_fetch_labeled(
+            'MATCH (u:__user__ {id: 50060}) RETURN u.languages AS languages, '
+            'u.uiLanguage AS uiLanguage',
+            {'user': 'User'},
+        )
+    )
     assert rows[0]['languages'] == ['en', 'ru', 'de']
+    assert rows[0]['uiLanguage'] is None
 
 @pytest.mark.integration
 def test_stream_user_activity_returns_is_local_and_languages(docker_compose: DockerComposeInfo, postgres_conn: Connection[TupleRow], mastodon_schema: None, worker_schema: str, settings: HintGridSettings) -> None:
@@ -135,7 +165,18 @@ def test_stream_user_activity_returns_is_local_and_languages(docker_compose: Doc
         if worker_schema != 'public':
             cur.execute(sql.SQL('SET search_path TO {}, public').format(sql.Identifier(worker_schema)))
         cur.execute("\n            INSERT INTO accounts (id, username, domain) VALUES\n                (50070, 'local_user', NULL),\n                (50071, 'remote_user', 'remote.social')\n            ON CONFLICT (id) DO NOTHING;\n        ")
-        cur.execute("\n            INSERT INTO users (id, account_id, email, current_sign_in_at, chosen_languages)\n            VALUES\n                (70, 50070, 'local@test.com', NOW(), '{en,ru}'),\n                (71, 50071, 'remote@test.com', NOW(), NULL)\n            ON CONFLICT (id) DO NOTHING;\n        ")
+        cur.execute(
+            """
+            INSERT INTO users (id, account_id, email, current_sign_in_at, locale, chosen_languages)
+            VALUES
+                (70, 50070, 'local@test.com', NOW(), 'ru', '{en,ru}'),
+                (71, 50071, 'remote@test.com', NOW(), NULL, NULL)
+            ON CONFLICT (id) DO UPDATE SET
+                locale = EXCLUDED.locale,
+                chosen_languages = EXCLUDED.chosen_languages,
+                current_sign_in_at = EXCLUDED.current_sign_in_at;
+            """
+        )
         cur.execute('\n            INSERT INTO account_stats (account_id, last_status_at) VALUES\n                (50070, NOW()),\n                (50071, NOW())\n            ON CONFLICT (account_id) DO NOTHING;\n        ')
         postgres_conn.commit()
     pg = PostgresClient.from_settings(HintGridSettings(postgres_host=docker_compose.postgres_host, postgres_port=docker_compose.postgres_port, postgres_database=docker_compose.postgres_db, postgres_user=docker_compose.postgres_user, postgres_password=docker_compose.postgres_password, postgres_schema=worker_schema))
@@ -145,6 +186,7 @@ def test_stream_user_activity_returns_is_local_and_languages(docker_compose: Doc
         assert 50070 in row_map, 'Local user should be in activity stream'
         assert row_map[50070]['is_local'] is True
         assert row_map[50070]['chosen_languages'] == ['en', 'ru']
+        assert row_map[50070]['locale'] == 'ru'
         assert 50071 in row_map, 'Remote user should be in activity stream'
         assert row_map[50071]['is_local'] is False
         assert row_map[50071]['chosen_languages'] is None

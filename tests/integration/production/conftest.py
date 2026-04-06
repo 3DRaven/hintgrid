@@ -225,6 +225,7 @@ def seed_postgres_production(
                     account_id BIGINT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
                     current_sign_in_at TIMESTAMP,
                     last_sign_in_at TIMESTAMP,
+                    locale VARCHAR,
                     chosen_languages VARCHAR[]
                 )
             """)

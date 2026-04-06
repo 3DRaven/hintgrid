@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import re
 import time
+import uuid
 from contextlib import AbstractContextManager
 from typing import TYPE_CHECKING, LiteralString, Self
 
@@ -17,7 +18,9 @@ if TYPE_CHECKING:
 
     from neo4j import Driver
 
+    from hintgrid.cli.progress_display import HintGridProgress
     from hintgrid.config import HintGridSettings
+    from rich.progress import TaskID
 
     # Neo4j parameter types - what can be passed to queries
     # Using Sequence and Mapping for covariance - allows list[dict[str, float]] to be passed
@@ -497,39 +500,99 @@ class Neo4jClient(AbstractContextManager["Neo4jClient"]):
             failed,
         )
 
-    def detach_delete_all_nodes(self, batch_size: int) -> None:
+    def detach_delete_all_nodes(
+        self,
+        batch_size: int,
+        *,
+        progress: HintGridProgress | None = None,
+        settings: HintGridSettings | None = None,
+    ) -> None:
         """Delete every node via ``apoc.periodic.iterate`` in small transactions.
 
         A single ``MATCH (n) DETACH DELETE n`` can exceed
         ``dbms.memory.transaction.total.max`` on large graphs; batching keeps
         each transaction bounded.
+
+        When ``progress`` and ``settings`` are provided, updates Neo4j
+        ``ProgressTracker`` and the Rich/plain progress UI (same pattern as
+        pipeline batch operations).
         """
         if batch_size < 1:
             raise ValueError(f"batch_size must be >= 1, got {batch_size}")
+        if progress is not None and settings is None:
+            raise ValueError("settings is required when progress is not None")
 
         if self._worker_label:
-            iterate_query: LiteralString = "MATCH (n:__worker__) RETURN id(n) AS nid"
-            action_query: LiteralString = (
-                "UNWIND $_batch AS row MATCH (n:__worker__) WHERE id(n) = row.nid DETACH DELETE n"
-            )
-            result = self.execute_periodic_iterate(
-                iterate_query,
-                action_query,
+            count_rows = self.execute_and_fetch_labeled(
+                "MATCH (n:__worker__) RETURN count(n) AS total",
                 ident_map={"worker": self._worker_label},
-                batch_size=batch_size,
-                parallel=False,
-                batch_mode="BATCH",
             )
         else:
-            iterate_query = "MATCH (n) RETURN id(n) AS nid"
-            action_query = "UNWIND $_batch AS row MATCH (n) WHERE id(n) = row.nid DETACH DELETE n"
-            result = self.execute_periodic_iterate(
-                iterate_query,
-                action_query,
-                batch_size=batch_size,
-                parallel=False,
-                batch_mode="BATCH",
+            count_rows = self.execute_and_fetch("MATCH (n) RETURN count(n) AS total")
+        node_total = coerce_int(count_rows[0].get("total", 0)) if count_rows else 0
+
+        operation_id = f"clean_graph_delete_{uuid.uuid4().hex[:12]}"
+        polling_thread = None
+        task_id: TaskID | None = None
+        result: dict[str, Neo4jValue] = {}
+
+        if progress is not None:
+            assert settings is not None
+            self.create_progress_tracker(operation_id, node_total)
+            task_id = progress.add_task(
+                "[cyan]Deleting Neo4j nodes...",
+                total=float(node_total),
             )
+            from hintgrid.cli.console import track_periodic_iterate_progress
+
+            polling_thread = track_periodic_iterate_progress(
+                self,
+                operation_id,
+                progress,
+                task_id,
+                poll_interval=settings.progress_poll_interval_seconds,
+            )
+
+        try:
+            if self._worker_label:
+                iterate_query: LiteralString = "MATCH (n:__worker__) RETURN id(n) AS nid"
+                action_query: LiteralString = (
+                    "UNWIND $_batch AS row MATCH (n:__worker__) WHERE id(n) = row.nid "
+                    "DETACH DELETE n"
+                )
+                result = self.execute_periodic_iterate(
+                    iterate_query,
+                    action_query,
+                    ident_map={"worker": self._worker_label},
+                    batch_size=batch_size,
+                    parallel=False,
+                    batch_mode="BATCH",
+                    progress_tracker_id=operation_id if progress is not None else None,
+                )
+            else:
+                iterate_query = "MATCH (n) RETURN id(n) AS nid"
+                action_query = (
+                    "UNWIND $_batch AS row MATCH (n) WHERE id(n) = row.nid DETACH DELETE n"
+                )
+                result = self.execute_periodic_iterate(
+                    iterate_query,
+                    action_query,
+                    batch_size=batch_size,
+                    parallel=False,
+                    batch_mode="BATCH",
+                    progress_tracker_id=operation_id if progress is not None else None,
+                )
+        finally:
+            if polling_thread is not None:
+                polling_thread.stop_event.set()
+                polling_thread.join(timeout=2.0)
+            if progress is not None:
+                self.cleanup_progress_tracker(operation_id)
+                if task_id is not None:
+                    progress.update(
+                        task_id,
+                        description="[green]Neo4j nodes deleted",
+                    )
 
         failed = coerce_int(result.get("failedOperations", 0))
         if failed > 0:
@@ -562,7 +625,12 @@ class Neo4jClient(AbstractContextManager["Neo4jClient"]):
                 "RETURN collect(relationshipType) AS types"
             )
             record = result.single()
-            raw: list[str] = record["types"] if record else []
+            types_payload: Neo4jValue = record["types"] if record else []
+            raw = (
+                [str(item) for item in types_payload]
+                if isinstance(types_payload, list)
+                else []
+            )
         self._rel_types_cache: frozenset[str] = frozenset(raw)
         logger.debug("Existing relationship types: %s", self._rel_types_cache)
         return self._rel_types_cache

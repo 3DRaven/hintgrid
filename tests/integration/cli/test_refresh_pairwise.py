@@ -106,6 +106,8 @@ def _build_refresh_cli_args(
         args.append("--no-community-similarity-enabled")
 
     args.extend(["--language-match-weight", str(language_match_weight)])
+    ui_w = max(0.5, float(language_match_weight))
+    args.extend(["--ui-language-match-weight", str(ui_w)])
 
     return args
 

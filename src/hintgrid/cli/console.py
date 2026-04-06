@@ -396,6 +396,7 @@ _SETTINGS_GROUPS: list[tuple[str, str, list[str]]] = [
             "active_user_days",
             "feed_force_refresh",
             "language_match_weight",
+            "ui_language_match_weight",
         ],
     ),
     (
@@ -734,6 +735,12 @@ def print_user_info_table(user_info: UserInfo) -> None:
     else:
         handle = "[dim]—[/dim]"
     table.add_row("Handle", handle)
+
+    ui_lang = user_info.get("ui_language")
+    if ui_lang:
+        table.add_row("UI language", ui_lang)
+    else:
+        table.add_row("UI language", "[dim]—[/dim]")
 
     # Languages
     languages = user_info.get("languages")

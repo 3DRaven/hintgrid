@@ -281,3 +281,47 @@ def test_cold_start_applies_language_boost(
         f"English post ({rec_map[40201]}) should score higher than "
         f"Japanese post ({rec_map[40202]}) in cold start"
     )
+
+
+@pytest.mark.integration
+def test_ui_locale_boost_stronger_than_chosen_only(
+    neo4j: Neo4jClient,
+    settings: HintGridSettings,
+) -> None:
+    """Post matching users.locale (uiLanguage) gets a higher boost than chosen_languages only."""
+    neo4j.label("User")
+    neo4j.label("UserCommunity")
+    neo4j.label("PostCommunity")
+    neo4j.label("Post")
+
+    neo4j.execute_labeled(
+        "CREATE (u1:__user__ {id: 41001, isLocal: true, uiLanguage: 'en', languages: ['de']}) "
+        "CREATE (uc1:__uc__ {id: 'ui_uc_1'}) "
+        "CREATE (pc1:__pc__ {id: 'ui_pc_1'}) "
+        "CREATE (u1)-[:BELONGS_TO]->(uc1) "
+        "CREATE (uc1)-[:INTERESTED_IN {score: 1.0}]->(pc1) "
+        "CREATE (p_en:__post__ {id: 41101, language: 'en', "
+        "createdAt: datetime() - duration({hours: 1}), embedding: [0.1]})-[:BELONGS_TO]->(pc1) "
+        "CREATE (p_de:__post__ {id: 41102, language: 'de', "
+        "createdAt: datetime() - duration({hours: 1}), embedding: [0.2]})-[:BELONGS_TO]->(pc1)",
+        {"user": "User", "uc": "UserCommunity", "pc": "PostCommunity", "post": "Post"},
+    )
+
+    test_settings = HintGridSettings(
+        personalized_interest_weight=1.0,
+        personalized_popularity_weight=0.0,
+        personalized_recency_weight=0.0,
+        language_match_weight=0.3,
+        ui_language_match_weight=0.8,
+        feed_size=100,
+        feed_days=7,
+        neo4j_worker_label=settings.neo4j_worker_label,
+        pagerank_enabled=False,
+    )
+
+    recs = generate_user_feed(neo4j, 41001, test_settings)
+    rec_map = {int(r["post_id"]): r["score"] for r in recs}
+
+    assert rec_map[41101] > rec_map[41102], (
+        f"UI locale match ({rec_map[41101]}) should beat chosen-only match ({rec_map[41102]})"
+    )

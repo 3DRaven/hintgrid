@@ -48,6 +48,7 @@ class UserInfo(TypedDict, total=False):
     username: str | None
     domain: str | None
     languages: list[str] | None
+    ui_language: str | None
     is_local: bool
 
     # Extended fields (optional)
@@ -1255,7 +1256,8 @@ def get_user_info(neo4j: Neo4jClient, postgres: PostgresClient, user_id: int) ->
     # Get user data from Neo4j
     user_neo4j_result = list(
         neo4j.execute_and_fetch_labeled(
-            "MATCH (u:__user__ {id: $user_id}) RETURN u.languages AS languages, u.isLocal AS is_local",
+            "MATCH (u:__user__ {id: $user_id}) RETURN u.languages AS languages, "
+            "u.uiLanguage AS ui_language, u.isLocal AS is_local",
             {"user": "User"},
             {"user_id": user_id},
         )
@@ -1277,6 +1279,13 @@ def get_user_info(neo4j: Neo4jClient, postgres: PostgresClient, user_id: int) ->
         for item_raw in languages_raw:
             # Use coerce_str for all types (works for str, int, float)
             languages.append(coerce_str(item_raw, ""))
+    ui_language_raw = neo4j_info.get("ui_language")
+    if ui_language_raw is None:
+        ui_language: str | None = None
+    else:
+        ui_s = coerce_str(ui_language_raw, "")
+        ui_language = ui_s if ui_s else None
+
     is_local_raw = neo4j_info.get("is_local", False)
     # Check for bool using hasattr instead of isinstance
     is_local: bool = (
@@ -1296,6 +1305,7 @@ def get_user_info(neo4j: Neo4jClient, postgres: PostgresClient, user_id: int) ->
         username=username,
         domain=domain,
         languages=languages,
+        ui_language=ui_language,
         is_local=is_local,
     )
 

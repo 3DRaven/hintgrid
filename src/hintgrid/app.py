@@ -242,6 +242,7 @@ class HintGridApp:
         interactions: bool = False,
         recommendations: bool = False,
         fasttext_state: bool = False,
+        progress: HintGridProgress | None = None,
     ) -> None:
         """Delete data from Neo4j, Redis, and/or model files on disk.
 
@@ -283,7 +284,7 @@ class HintGridApp:
             # feed_score_multiplier is validated to be >= 1, so HintGrid entries are always distinguishable
             self.clean_redis()
         if clean_all or graph:
-            self.clean_graph()
+            self.clean_graph(progress=progress)
         if clean_all or models:
             self.clean_models()
 
@@ -324,9 +325,13 @@ class HintGridApp:
         if recommendations and not (clusters or clean_all):
             self.clean_recommendations()
 
-    def clean_graph(self) -> None:
+    def clean_graph(self, *, progress: HintGridProgress | None = None) -> None:
         """Delete all nodes and relationships from Neo4j."""
-        self.neo4j.detach_delete_all_nodes(self.settings.apoc_batch_size)
+        self.neo4j.detach_delete_all_nodes(
+            self.settings.apoc_batch_size,
+            progress=progress,
+            settings=self.settings if progress is not None else None,
+        )
 
     def clean_redis(self) -> None:
         """Remove HintGrid feed recommendations from Redis.

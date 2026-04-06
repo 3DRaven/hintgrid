@@ -15,6 +15,7 @@ from hintgrid.pipeline.feed_detail import RecommendationDetail, get_detailed_rec
 from hintgrid.pipeline.feed_queries import (
     build_feed_filters,
     build_popularity_expr,
+    language_match_score_case,
     pagerank_binding,
     pagerank_score_weight_line,
 )
@@ -86,11 +87,8 @@ def generate_user_feed(
         "     log10(popularity + $popularity_smoothing) * $popularity_weight + "
         "     ($recency_numerator / (age_hours / 24.0 + $recency_smoothing)) * $recency_weight + "
         + pr_w
-        + "     CASE WHEN u.languages IS NULL OR p.language IS NULL "
-        "              OR p.language IN u.languages "
-        "          THEN $language_match_weight "
-        "          ELSE 0.0 "
-        "     END AS score "
+        + language_match_score_case()
+        + "AS score "
         "RETURN p.id AS post_id, score "
         "ORDER BY score DESC LIMIT $feed_size"
     )
@@ -111,6 +109,7 @@ def generate_user_feed(
                 "recency_smoothing": settings.recency_smoothing,
                 "recency_numerator": settings.recency_numerator,
                 "language_match_weight": settings.language_match_weight,
+                "ui_language_match_weight": settings.ui_language_match_weight,
             },
         )
     )
@@ -128,11 +127,8 @@ def generate_user_feed(
             "WITH p, "
             "     log10(popularity + $popularity_smoothing) * $popularity_weight + "
             "     ($recency_numerator / (age_hours / 24.0 + $recency_smoothing)) * $recency_weight + "
-            "     CASE WHEN u.languages IS NULL OR p.language IS NULL "
-            "              OR p.language IN u.languages "
-            "          THEN $language_match_weight "
-            "          ELSE 0.0 "
-            "     END AS score "
+            + language_match_score_case()
+            + "AS score "
             "RETURN p.id AS post_id, score "
             "ORDER BY score DESC LIMIT $cold_start_limit"
         )
@@ -150,6 +146,7 @@ def generate_user_feed(
                     "recency_smoothing": settings.recency_smoothing,
                     "recency_numerator": settings.recency_numerator,
                     "language_match_weight": settings.language_match_weight,
+                    "ui_language_match_weight": settings.ui_language_match_weight,
                 },
             )
         )

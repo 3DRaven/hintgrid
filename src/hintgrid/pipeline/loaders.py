@@ -7,7 +7,7 @@ import threading
 from collections.abc import Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, UTC
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -39,8 +39,36 @@ from hintgrid.utils.coercion import (
     convert_batch_decimals,
     parse_load_since,
 )
+from hintgrid.utils.languages import user_activity_row_to_neo4j_fields
 
 logger = logging.getLogger(__name__)
+
+
+def _neo4j_user_activity_row(row: dict[str, object]) -> dict[str, object]:
+    """Map PostgreSQL activity row to Neo4j ``update_user_activity`` batch shape."""
+    raw_locale = row.get("locale")
+    locale_str: str | None = (
+        coerce_optional_str(raw_locale) if raw_locale is not None else None
+    )
+    chosen_raw = row.get("chosen_languages")
+    chosen_list: list[str] | None
+    if chosen_raw is None:
+        chosen_list = None
+    elif isinstance(chosen_raw, list):
+        chosen_list = [str(x) for x in cast("list[object]", chosen_raw)]
+    else:
+        chosen_list = None
+    ui, langs = user_activity_row_to_neo4j_fields(
+        locale=locale_str,
+        chosen_languages=chosen_list,
+    )
+    return {
+        "account_id": row["account_id"],
+        "last_active": row["last_active"],
+        "is_local": row["is_local"],
+        "ui_language": ui,
+        "languages": langs,
+    }
 
 
 class _ThreadSafeStateStore(StateStore):
@@ -933,7 +961,7 @@ def _load_user_activity(
     batch: list[dict[str, object]] = []
     state_id = state_store.state_id
     for row in postgres.stream_user_activity(active_days, last_account_id):
-        batch.append(row)
+        batch.append(_neo4j_user_activity_row(row))
         if len(batch) >= settings.batch_size:
             batch_num += 1
             # Calculate max ID from entire batch (needed for state update)

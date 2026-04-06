@@ -42,6 +42,26 @@ class TestNewConfigValidation:
         assert "language_match_weight" in str(exc_info.value)
 
     @pytest.mark.integration
+    def test_valid_ui_language_match_weight_pair(self) -> None:
+        """ui_language_match_weight >= language_match_weight should not raise."""
+        settings = HintGridSettings(
+            language_match_weight=0.3,
+            ui_language_match_weight=0.5,
+        )
+        validate_settings(settings)
+
+    @pytest.mark.integration
+    def test_invalid_ui_language_match_weight_below_chosen(self) -> None:
+        """ui_language_match_weight < language_match_weight should raise."""
+        settings = HintGridSettings(
+            language_match_weight=0.6,
+            ui_language_match_weight=0.3,
+        )
+        with pytest.raises(ConfigurationError) as exc_info:
+            validate_settings(settings)
+        assert "ui_language_match_weight" in str(exc_info.value)
+
+    @pytest.mark.integration
     def test_valid_bookmark_weight(self) -> None:
         """Valid bookmark_weight should not raise."""
         settings = HintGridSettings(bookmark_weight=2.0)

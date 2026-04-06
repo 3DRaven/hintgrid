@@ -126,8 +126,10 @@ DEFAULT_COMMUNITY_SIMILARITY_TOP_K = 5
 DEFAULT_ACTIVE_USER_DAYS = 90
 DEFAULT_FEED_FORCE_REFRESH = False
 
-# Language boost for feed scoring
+# Language boost for feed scoring (chosen_languages)
 DEFAULT_LANGUAGE_MATCH_WEIGHT = 0.3
+# Boost when post language matches users.locale (UI), typically >= language_match_weight
+DEFAULT_UI_LANGUAGE_MATCH_WEIGHT = 0.5
 
 # Bookmarks weight in interest calculation (higher than likes)
 DEFAULT_BOOKMARK_WEIGHT = 2.0
@@ -277,8 +279,9 @@ class HintGridSettings(BaseSettings):
     active_user_days: int = Field(default=DEFAULT_ACTIVE_USER_DAYS)
     feed_force_refresh: bool = Field(default=DEFAULT_FEED_FORCE_REFRESH)
 
-    # Language boost
+    # Language boost (chosen_languages vs UI locale)
     language_match_weight: float = Field(default=DEFAULT_LANGUAGE_MATCH_WEIGHT)
+    ui_language_match_weight: float = Field(default=DEFAULT_UI_LANGUAGE_MATCH_WEIGHT)
 
     # Bookmarks
     bookmark_weight: float = Field(default=DEFAULT_BOOKMARK_WEIGHT)
@@ -571,6 +574,16 @@ def validate_settings(settings: HintGridSettings) -> None:
     # Language boost
     if settings.language_match_weight < 0:
         errors.append(f"language_match_weight must be >= 0, got {settings.language_match_weight}")
+    if settings.ui_language_match_weight < 0:
+        errors.append(
+            f"ui_language_match_weight must be >= 0, got {settings.ui_language_match_weight}"
+        )
+    if settings.ui_language_match_weight < settings.language_match_weight:
+        errors.append(
+            "ui_language_match_weight must be >= language_match_weight "
+            f"(got ui={settings.ui_language_match_weight}, "
+            f"chosen={settings.language_match_weight})"
+        )
 
     # Bookmarks
     if settings.bookmark_weight < 0:

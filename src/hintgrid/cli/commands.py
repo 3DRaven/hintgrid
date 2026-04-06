@@ -681,9 +681,17 @@ FeedForceRefreshOpt = Annotated[
 LanguageMatchWeightOpt = Annotated[
     float | None,
     typer.Option(
-        help="Weight boost for posts matching user's preferred language "
-        "in feed scoring. [default: 0.3]",
+        help="Weight boost for posts matching chosen_languages (not UI locale). "
+        "[default: 0.3]",
         envvar="HINTGRID_LANGUAGE_MATCH_WEIGHT",
+    ),
+]
+UiLanguageMatchWeightOpt = Annotated[
+    float | None,
+    typer.Option(
+        help="Weight boost when post language matches user's UI locale "
+        "(users.locale). Should be >= language-match-weight. [default: 0.5]",
+        envvar="HINTGRID_UI_LANGUAGE_MATCH_WEIGHT",
     ),
 ]
 
@@ -1160,6 +1168,7 @@ def run(
     active_user_days: ActiveUserDaysOpt = None,
     feed_force_refresh: FeedForceRefreshOpt = None,
     language_match_weight: LanguageMatchWeightOpt = None,
+    ui_language_match_weight: UiLanguageMatchWeightOpt = None,
     # Scoring
     likes_weight: LikesWeightOpt = None,
     reblogs_weight: ReblogsWeightOpt = None,
@@ -1292,6 +1301,7 @@ def run(
         active_user_days=active_user_days,
         feed_force_refresh=feed_force_refresh,
         language_match_weight=language_match_weight,
+        ui_language_match_weight=ui_language_match_weight,
         likes_weight=likes_weight,
         reblogs_weight=reblogs_weight,
         replies_weight=replies_weight,
@@ -1391,6 +1401,7 @@ def refresh(
     community_similarity_top_k: CommunitySimilarityTopKOpt = None,
     # Language
     language_match_weight: LanguageMatchWeightOpt = None,
+    ui_language_match_weight: UiLanguageMatchWeightOpt = None,
     # Logging
     log_level: LogLevelOpt = None,
     log_file: LogFileOpt = None,
@@ -1442,6 +1453,7 @@ def refresh(
         community_similarity_enabled=community_similarity_enabled,
         community_similarity_top_k=community_similarity_top_k,
         language_match_weight=language_match_weight,
+        ui_language_match_weight=ui_language_match_weight,
         log_level=log_level,
         log_file=log_file,
         progress_poll_interval_seconds=progress_poll_interval_seconds,
@@ -1552,6 +1564,7 @@ def export(
     active_user_days: ActiveUserDaysOpt = None,
     feed_force_refresh: FeedForceRefreshOpt = None,
     language_match_weight: LanguageMatchWeightOpt = None,
+    ui_language_match_weight: UiLanguageMatchWeightOpt = None,
     # Scoring
     likes_weight: LikesWeightOpt = None,
     reblogs_weight: ReblogsWeightOpt = None,
@@ -1684,6 +1697,7 @@ def export(
         active_user_days=active_user_days,
         feed_force_refresh=feed_force_refresh,
         language_match_weight=language_match_weight,
+        ui_language_match_weight=ui_language_match_weight,
         likes_weight=likes_weight,
         reblogs_weight=reblogs_weight,
         replies_weight=replies_weight,
@@ -1838,6 +1852,7 @@ def train(
     active_user_days: ActiveUserDaysOpt = None,
     feed_force_refresh: FeedForceRefreshOpt = None,
     language_match_weight: LanguageMatchWeightOpt = None,
+    ui_language_match_weight: UiLanguageMatchWeightOpt = None,
     # Scoring
     likes_weight: LikesWeightOpt = None,
     reblogs_weight: ReblogsWeightOpt = None,
@@ -1978,6 +1993,7 @@ def train(
         active_user_days=active_user_days,
         feed_force_refresh=feed_force_refresh,
         language_match_weight=language_match_weight,
+        ui_language_match_weight=ui_language_match_weight,
         likes_weight=likes_weight,
         reblogs_weight=reblogs_weight,
         replies_weight=replies_weight,
@@ -2153,6 +2169,7 @@ def clean(
     active_user_days: ActiveUserDaysOpt = None,
     feed_force_refresh: FeedForceRefreshOpt = None,
     language_match_weight: LanguageMatchWeightOpt = None,
+    ui_language_match_weight: UiLanguageMatchWeightOpt = None,
     # Scoring
     likes_weight: LikesWeightOpt = None,
     reblogs_weight: ReblogsWeightOpt = None,
@@ -2290,6 +2307,7 @@ def clean(
         active_user_days=active_user_days,
         feed_force_refresh=feed_force_refresh,
         language_match_weight=language_match_weight,
+        ui_language_match_weight=ui_language_match_weight,
         likes_weight=likes_weight,
         reblogs_weight=reblogs_weight,
         replies_weight=replies_weight,
@@ -2444,6 +2462,7 @@ def get_user_info_cmd(
     active_user_days: ActiveUserDaysOpt = None,
     feed_force_refresh: FeedForceRefreshOpt = None,
     language_match_weight: LanguageMatchWeightOpt = None,
+    ui_language_match_weight: UiLanguageMatchWeightOpt = None,
     # Scoring
     likes_weight: LikesWeightOpt = None,
     reblogs_weight: ReblogsWeightOpt = None,
@@ -2576,6 +2595,7 @@ def get_user_info_cmd(
         active_user_days=active_user_days,
         feed_force_refresh=feed_force_refresh,
         language_match_weight=language_match_weight,
+        ui_language_match_weight=ui_language_match_weight,
         likes_weight=likes_weight,
         reblogs_weight=reblogs_weight,
         replies_weight=replies_weight,
@@ -2717,6 +2737,7 @@ def validate(
     active_user_days: ActiveUserDaysOpt = None,
     feed_force_refresh: FeedForceRefreshOpt = None,
     language_match_weight: LanguageMatchWeightOpt = None,
+    ui_language_match_weight: UiLanguageMatchWeightOpt = None,
     # Scoring
     likes_weight: LikesWeightOpt = None,
     reblogs_weight: ReblogsWeightOpt = None,
@@ -2849,6 +2870,7 @@ def validate(
         active_user_days=active_user_days,
         feed_force_refresh=feed_force_refresh,
         language_match_weight=language_match_weight,
+        ui_language_match_weight=ui_language_match_weight,
         likes_weight=likes_weight,
         reblogs_weight=reblogs_weight,
         replies_weight=replies_weight,
@@ -3105,6 +3127,7 @@ def reindex(
     active_user_days: ActiveUserDaysOpt = None,
     feed_force_refresh: FeedForceRefreshOpt = None,
     language_match_weight: LanguageMatchWeightOpt = None,
+    ui_language_match_weight: UiLanguageMatchWeightOpt = None,
     # Scoring
     likes_weight: LikesWeightOpt = None,
     reblogs_weight: ReblogsWeightOpt = None,
@@ -3237,6 +3260,7 @@ def reindex(
         active_user_days=active_user_days,
         feed_force_refresh=feed_force_refresh,
         language_match_weight=language_match_weight,
+        ui_language_match_weight=ui_language_match_weight,
         likes_weight=likes_weight,
         reblogs_weight=reblogs_weight,
         replies_weight=replies_weight,

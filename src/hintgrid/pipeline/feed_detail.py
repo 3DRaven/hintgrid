@@ -13,6 +13,7 @@ from hintgrid.config import HintGridSettings
 from hintgrid.pipeline.feed_queries import (
     build_feed_filters,
     build_popularity_expr,
+    language_match_score_case,
     pagerank_binding,
     pagerank_score_weight_line,
 )
@@ -66,16 +67,10 @@ def get_detailed_recommendations(
         "     log10(popularity + $popularity_smoothing) * $popularity_weight + "
         "     ($recency_numerator / (age_hours / 24.0 + $recency_smoothing)) * $recency_weight + "
         + pr_w
-        + "     CASE WHEN u.languages IS NULL OR p.language IS NULL "
-        "              OR p.language IN u.languages "
-        "          THEN $language_match_weight "
-        "          ELSE 0.0 "
-        "     END AS score, "
-        "     CASE WHEN u.languages IS NULL OR p.language IS NULL "
-        "              OR p.language IN u.languages "
-        "          THEN $language_match_weight "
-        "          ELSE 0.0 "
-        "     END AS language_match "
+        + language_match_score_case()
+        + "AS score, "
+        + language_match_score_case()
+        + "AS language_match "
         "RETURN p.id AS post_id, "
         "       COALESCE(p.text, '') AS post_text, "
         "       p.language AS post_language, "
@@ -106,6 +101,7 @@ def get_detailed_recommendations(
                 "recency_smoothing": settings.recency_smoothing,
                 "recency_numerator": settings.recency_numerator,
                 "language_match_weight": settings.language_match_weight,
+                "ui_language_match_weight": settings.ui_language_match_weight,
             },
         )
     )
@@ -124,16 +120,10 @@ def get_detailed_recommendations(
             "WITH u, p, popularity, age_hours, pagerank, "
             "     log10(popularity + $popularity_smoothing) * $popularity_weight + "
             "     ($recency_numerator / (age_hours / 24.0 + $recency_smoothing)) * $recency_weight + "
-            "     CASE WHEN u.languages IS NULL OR p.language IS NULL "
-            "              OR p.language IN u.languages "
-            "          THEN $language_match_weight "
-            "          ELSE 0.0 "
-            "     END AS score, "
-            "     CASE WHEN u.languages IS NULL OR p.language IS NULL "
-            "              OR p.language IN u.languages "
-            "          THEN $language_match_weight "
-            "          ELSE 0.0 "
-            "     END AS language_match "
+            + language_match_score_case()
+            + "AS score, "
+            + language_match_score_case()
+            + "AS language_match "
             "RETURN p.id AS post_id, "
             "       COALESCE(p.text, '') AS post_text, "
             "       p.language AS post_language, "
@@ -161,6 +151,7 @@ def get_detailed_recommendations(
                     "recency_smoothing": settings.recency_smoothing,
                     "recency_numerator": settings.recency_numerator,
                     "language_match_weight": settings.language_match_weight,
+                    "ui_language_match_weight": settings.ui_language_match_weight,
                 },
             )
         )

@@ -217,11 +217,27 @@ def test_update_user_activity_atomic_state_update(neo4j: Neo4jClient) -> None:
     initial_state = state_store.load()
     assert initial_state.last_activity_account_id == 0
     neo4j.execute_labeled('CREATE (u:__user__ {id: $user_id})', {'user': 'User'}, {'user_id': 60060})
-    batch: list[dict[str, object]] = [{'account_id': 60060, 'last_active': '2024-01-01T00:00:00Z', 'is_local': True, 'chosen_languages': ['en', 'ru']}]
+    batch: list[dict[str, object]] = [
+        {
+            'account_id': 60060,
+            'last_active': '2024-01-01T00:00:00Z',
+            'is_local': True,
+            'ui_language': 'en',
+            'languages': ['en', 'ru'],
+        }
+    ]
     result = update_user_activity(neo4j, convert_batch_decimals(batch), state_id='test_activity_atomic', batch_max_id=60060)
     assert result == 60060, 'Should return max account_id from batch'
     updated_state = state_store.load()
     assert updated_state.last_activity_account_id == 60060, 'State should be updated to max account_id'
-    user_result = list(neo4j.execute_and_fetch_labeled('MATCH (u:__user__ {id: $user_id}) RETURN u.isLocal AS is_local, u.languages AS langs', {'user': 'User'}, {'user_id': 60060}))
+    user_result = list(
+        neo4j.execute_and_fetch_labeled(
+            'MATCH (u:__user__ {id: $user_id}) RETURN u.isLocal AS is_local, '
+            'u.languages AS langs, u.uiLanguage AS ui_lang',
+            {'user': 'User'},
+            {'user_id': 60060},
+        )
+    )
     assert user_result[0].get('is_local') is True
     assert user_result[0].get('langs') == ['en', 'ru']
+    assert user_result[0].get('ui_lang') == 'en'

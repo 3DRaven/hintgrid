@@ -323,6 +323,7 @@ def test_print_user_info_table_with_full_data(capsys: pytest.CaptureFixture[str]
         "user_id": 12345,
         "username": "testuser",
         "domain": "example.com",
+        "ui_language": "de",
         "languages": ["en", "ru"],
         "is_local": False,
     }
@@ -335,6 +336,8 @@ def test_print_user_info_table_with_full_data(capsys: pytest.CaptureFixture[str]
     assert "testuser" in output
     assert "example.com" in output
     assert "en" in output or "ru" in output
+    assert "UI language" in output
+    assert "de" in output
 
 
 @pytest.mark.integration

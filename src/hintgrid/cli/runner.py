@@ -16,6 +16,7 @@ from hintgrid.cli.console import (
     print_warning,
 )
 from hintgrid.cli.memory import MemoryMonitor
+from hintgrid.cli.progress_display import create_batch_progress
 from hintgrid.cli.shutdown import ShutdownManager
 
 if TYPE_CHECKING:
@@ -265,24 +266,32 @@ def execute_clean(
             with MemoryMonitor(interval_seconds=memory_interval):
                 cleaned: list[str] = []
                 if clean_all:
-                    with console.status("[bold red]Cleaning all data...[/bold red]"):
-                        app.clean()
+                    batch_progress = create_batch_progress(settings=app.settings)
+                    with batch_progress:
+                        app.clean(progress=batch_progress)
                     cleaned = ["Neo4j", "Redis", "model files"]
                 else:
-                    # Use app.clean() with flags to ensure proper cascading and Redis deletion logic
-                    with console.status("[bold red]Cleaning data...[/bold red]"):
-                        app.clean(
-                            graph=graph,
-                            redis=redis,
-                            models=models,
-                            embeddings=embeddings,
-                            clusters=clusters,
-                            similarity=similarity,
-                            interests=interests,
-                            interactions=interactions,
-                            recommendations=recommendations,
-                            fasttext_state=fasttext_state,
-                        )
+                    # Rich Progress conflicts with console.status (both use Live); use a bar when
+                    # clean_graph runs (graph delete is the long batched Neo4j step).
+                    clean_kwargs = {
+                        "graph": graph,
+                        "redis": redis,
+                        "models": models,
+                        "embeddings": embeddings,
+                        "clusters": clusters,
+                        "similarity": similarity,
+                        "interests": interests,
+                        "interactions": interactions,
+                        "recommendations": recommendations,
+                        "fasttext_state": fasttext_state,
+                    }
+                    if graph:
+                        batch_progress = create_batch_progress(settings=app.settings)
+                        with batch_progress:
+                            app.clean(**clean_kwargs, progress=batch_progress)
+                    else:
+                        with console.status("[bold red]Cleaning data...[/bold red]"):
+                            app.clean(**clean_kwargs, progress=None)
                     if graph:
                         cleaned.append("Neo4j")
                     if redis:

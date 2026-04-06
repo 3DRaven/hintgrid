@@ -392,7 +392,7 @@ def test_get_user_info_with_full_data(
     # Create user in Neo4j
     neo4j.label("User")
     neo4j.execute_labeled(
-        "CREATE (:__user__ {id: $user_id, languages: ['en', 'ru'], isLocal: true})",
+        "CREATE (:__user__ {id: $user_id, languages: ['en', 'ru'], uiLanguage: 'de', isLocal: true})",
         {"user": "User"},
         {"user_id": user_id},
     )
@@ -417,6 +417,7 @@ def test_get_user_info_with_full_data(
     assert user_info.get("username") == "testuser"
     assert user_info.get("domain") is None
     assert user_info.get("languages") == ["en", "ru"]
+    assert user_info.get("ui_language") == "de"
     assert user_info.get("is_local") is True
 
 
@@ -498,6 +499,7 @@ def test_get_user_info_no_languages(
     assert user_info.get("user_id") == user_id
     assert user_info.get("username") == "nolanguser"
     assert user_info.get("languages") is None
+    assert user_info.get("ui_language") is None
 
 
 @pytest.mark.integration

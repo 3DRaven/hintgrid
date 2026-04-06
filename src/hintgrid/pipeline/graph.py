@@ -1318,10 +1318,11 @@ def update_user_activity(
     state_id: str | None = None,
     batch_max_id: int | None = None,
 ) -> int | None:
-    """Batch-update User.lastActive, isLocal, languages from PostgreSQL activity data.
+    """Batch-update User.lastActive, isLocal, uiLanguage, languages from PostgreSQL activity data.
 
     Each row must have 'account_id' (int), 'last_active' (datetime),
-    'is_local' (bool), and optionally 'chosen_languages' (list[str] | None).
+    'is_local' (bool), optionally 'ui_language' (str | None) from users.locale,
+    and optionally 'languages' (list[str] | None) from chosen_languages only (normalized).
     Uses UNWIND for efficient batch processing.
 
     If state_id is provided, atomically updates AppState.last_processed_activity_account_id
@@ -1329,7 +1330,7 @@ def update_user_activity(
 
     Args:
         neo4j: Neo4j client
-        batch: List of dicts with account_id, last_active, is_local, chosen_languages
+        batch: List of dicts with account_id, last_active, is_local, ui_language, languages
         state_id: Optional state ID for atomic state update. If None, only updates users.
         batch_max_id: Maximum account_id from the entire batch. Required if state_id is provided.
 
@@ -1350,7 +1351,8 @@ def update_user_activity(
             "MATCH (u:__user__ {id: row.account_id}) "
             "SET u.lastActive = datetime(row.last_active), "
             "    u.isLocal = row.is_local, "
-            "    u.languages = row.chosen_languages "
+            "    u.uiLanguage = row.ui_language, "
+            "    u.languages = row.languages "
             "WITH $batch_max_id AS batch_max_id "
             "MATCH (s:__state_label__ {id: $state_id}) "
             "SET s.last_processed_activity_account_id = CASE "
@@ -1382,7 +1384,8 @@ def update_user_activity(
             "MATCH (u:__user__ {id: row.account_id}) "
             "SET u.lastActive = datetime(row.last_active), "
             "    u.isLocal = row.is_local, "
-            "    u.languages = row.chosen_languages",
+            "    u.uiLanguage = row.ui_language, "
+            "    u.languages = row.languages",
             {"user": "User"},
             params,
         )
