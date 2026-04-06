@@ -16,15 +16,24 @@ from hintgrid.utils.coercion import coerce_int
 
 logger = logging.getLogger(__name__)
 
-_DELETE_USER_BELONGS: LiteralString = "MATCH (u:__user__)-[old:BELONGS_TO]->(uc:__uc__) DELETE old"
-_DELETE_POST_BELONGS: LiteralString = "MATCH (p:__post__)-[old:BELONGS_TO]->(pc:__pc__) DELETE old"
-
 _COUNT_USERS_WITH_CLUSTER: LiteralString = (
     "MATCH (u:__user__) WHERE u.cluster_id IS NOT NULL RETURN count(*) AS total"
 )
 _COUNT_POSTS_WITH_CLUSTER: LiteralString = (
     "MATCH (p:__post__) WHERE p.cluster_id IS NOT NULL RETURN count(*) AS total"
 )
+
+_COUNT_USER_BELONGS_RELS: LiteralString = (
+    "MATCH (u:__user__)-[r:BELONGS_TO]->(:__uc__) RETURN count(r) AS total"
+)
+_COUNT_POST_BELONGS_RELS: LiteralString = (
+    "MATCH (p:__post__)-[r:BELONGS_TO]->(:__pc__) RETURN count(r) AS total"
+)
+
+_ITERATE_USER_BELONGS_RELS: LiteralString = "MATCH (u:__user__)-[r:BELONGS_TO]->(:__uc__) RETURN r"
+_ITERATE_POST_BELONGS_RELS: LiteralString = "MATCH (p:__post__)-[r:BELONGS_TO]->(:__pc__) RETURN r"
+
+_ACTION_DELETE_BELONGS_BATCH: LiteralString = "UNWIND $_batch AS row WITH row.r AS rel DELETE rel"
 
 _ITERATE_USER_ROWS: LiteralString = (
     "MATCH (u:__user__) WHERE u.cluster_id IS NOT NULL RETURN id(u) AS node_id"
@@ -132,11 +141,90 @@ def gc_orphan_post_communities(neo4j: Neo4jClient) -> None:
     )
 
 
+def _batched_delete_belongs_to_edges(
+    neo4j: Neo4jClient,
+    settings: HintGridSettings,
+    *,
+    label_map: dict[str, str],
+    iterate_query: LiteralString,
+    count_query: LiteralString,
+    log_label: str,
+    progress: HintGridProgress | None,
+    progress_task_title: str,
+    done_task_description: str,
+    console_status: str,
+) -> None:
+    """Remove existing BELONGS_TO edges in batches via apoc.periodic.iterate."""
+    count_result = neo4j.execute_and_fetch_labeled(count_query, label_map)
+    rel_total = coerce_int(count_result[0].get("total", 0), 0) if count_result else 0
+    if rel_total == 0:
+        logger.info(
+            "No existing %s BELONGS_TO edges to remove, skipping delete batch",
+            log_label,
+        )
+        return
+
+    operation_id = f"community_belongs_delete_{log_label}_{uuid.uuid4().hex[:8]}"
+
+    def _run_delete() -> None:
+        result = neo4j.execute_periodic_iterate(
+            iterate_query,
+            _ACTION_DELETE_BELONGS_BATCH,
+            label_map=label_map,
+            batch_size=settings.apoc_batch_size,
+            parallel=False,
+            batch_mode="BATCH",
+            progress_tracker_id=operation_id if progress is not None else None,
+            params=None,
+        )
+        logger.info(
+            "%s BELONGS_TO delete: batches=%s total=%s committed=%s failed=%s",
+            log_label,
+            coerce_int(result.get("batches", 0)),
+            coerce_int(result.get("total", 0)),
+            coerce_int(result.get("committedOperations", 0)),
+            coerce_int(result.get("failedOperations", 0)),
+        )
+        if coerce_int(result.get("failedOperations", 0)) > 0:
+            logger.warning(
+                "Some %s BELONGS_TO delete batch operations failed: %s",
+                log_label,
+                result.get("errorMessages", []),
+            )
+
+    if progress is not None:
+        neo4j.create_progress_tracker(operation_id, rel_total)
+        task_id = progress.add_task(progress_task_title, total=float(rel_total))
+        from hintgrid.cli.console import track_periodic_iterate_progress
+
+        polling_thread = track_periodic_iterate_progress(
+            neo4j,
+            operation_id,
+            progress,
+            task_id,
+            poll_interval=settings.progress_poll_interval_seconds,
+        )
+        try:
+            _run_delete()
+        finally:
+            polling_thread.stop_event.set()
+            polling_thread.join(timeout=2.0)
+            neo4j.cleanup_progress_tracker(operation_id)
+            progress.update(task_id, description=done_task_description)
+    else:
+        with console.status(console_status):
+            _run_delete()
+
+
 def _run_periodic_community_structure(
     neo4j: Neo4jClient,
     settings: HintGridSettings,
     *,
-    delete_query: LiteralString,
+    belongs_iterate: LiteralString,
+    belongs_count: LiteralString,
+    delete_progress_task_title: str,
+    delete_done_task_description: str,
+    delete_console_status: str,
     count_query: LiteralString,
     iterate_query: LiteralString,
     action_query: LiteralString,
@@ -149,8 +237,19 @@ def _run_periodic_community_structure(
     done_task_description: str,
     log_label: str,
 ) -> None:
-    """Delete old BELONGS_TO, then merge community nodes and edges in batches."""
-    neo4j.execute_labeled(delete_query, label_map)
+    """Delete old BELONGS_TO in batches, then merge community nodes and edges in batches."""
+    _batched_delete_belongs_to_edges(
+        neo4j,
+        settings,
+        label_map=label_map,
+        iterate_query=belongs_iterate,
+        count_query=belongs_count,
+        log_label=log_label,
+        progress=progress,
+        progress_task_title=delete_progress_task_title,
+        done_task_description=delete_done_task_description,
+        console_status=delete_console_status,
+    )
 
     count_result = neo4j.execute_and_fetch_labeled(
         count_query,
@@ -197,7 +296,7 @@ def _run_periodic_community_structure(
 
     if progress is not None:
         neo4j.create_progress_tracker(operation_id, total)
-        task_id = progress.add_task(progress_task_title, total=total)
+        task_id = progress.add_task(progress_task_title, total=float(total))
         from hintgrid.cli.console import track_periodic_iterate_progress
 
         polling_thread = track_periodic_iterate_progress(
@@ -230,7 +329,11 @@ def create_user_community_structure(
     _run_periodic_community_structure(
         neo4j,
         settings,
-        delete_query=_DELETE_USER_BELONGS,
+        belongs_iterate=_ITERATE_USER_BELONGS_RELS,
+        belongs_count=_COUNT_USER_BELONGS_RELS,
+        delete_progress_task_title="[cyan]Removing old user BELONGS_TO (edges)...",
+        delete_done_task_description="[green]✓ Old user BELONGS_TO removed",
+        delete_console_status="[bold blue]Removing old user BELONGS_TO...[/bold blue]",
         count_query=_COUNT_USERS_WITH_CLUSTER,
         iterate_query=_ITERATE_USER_ROWS,
         action_query=_ACTION_USER,
@@ -239,7 +342,7 @@ def create_user_community_structure(
         community_base_label="UserCommunity",
         progress=progress,
         console_status="[bold blue]Building user communities...[/bold blue]",
-        progress_task_title="[cyan]Building user communities...",
+        progress_task_title="[cyan]Building user communities (nodes)...",
         done_task_description="[green]✓ User communities linked",
         log_label="user",
     )
@@ -254,7 +357,11 @@ def create_post_community_structure(
     _run_periodic_community_structure(
         neo4j,
         settings,
-        delete_query=_DELETE_POST_BELONGS,
+        belongs_iterate=_ITERATE_POST_BELONGS_RELS,
+        belongs_count=_COUNT_POST_BELONGS_RELS,
+        delete_progress_task_title="[cyan]Removing old post BELONGS_TO (edges)...",
+        delete_done_task_description="[green]✓ Old post BELONGS_TO removed",
+        delete_console_status="[bold blue]Removing old post BELONGS_TO...[/bold blue]",
         count_query=_COUNT_POSTS_WITH_CLUSTER,
         iterate_query=_ITERATE_POST_ROWS,
         action_query=_ACTION_POST,
@@ -263,7 +370,7 @@ def create_post_community_structure(
         community_base_label="PostCommunity",
         progress=progress,
         console_status="[bold blue]Building post communities...[/bold blue]",
-        progress_task_title="[cyan]Building post communities...",
+        progress_task_title="[cyan]Building post communities (nodes)...",
         done_task_description="[green]✓ Post communities linked",
         log_label="post",
     )
