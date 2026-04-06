@@ -346,6 +346,8 @@ def execute_get_user_info(
     overrides: dict[str, object],
     handle: str,
     verbose: bool,
+    *,
+    feed_explain_respect_was_recommended: bool = False,
 ) -> int:
     """Execute the 'get-user-info' command."""
 
@@ -372,15 +374,23 @@ def execute_get_user_info(
                 print_error("User not found in database")
                 return EXIT_ERROR
 
-            from hintgrid.cli.feed_debug_print import print_feed_settings_snapshot
+            from hintgrid.cli.feed_debug_print import (
+                print_feed_explain_mode_line,
+                print_feed_settings_snapshot,
+            )
             from hintgrid.config import feed_debug_settings_snapshot
-            from hintgrid.pipeline.feed_explain import explain_feed_inclusion
+            from hintgrid.pipeline.feed_explain import explain_feed_inclusion, feed_explain_rel_types
 
             print_feed_settings_snapshot(feed_debug_settings_snapshot(app.settings))
 
             feed_top = user_info.get("feed_top_posts")
             if feed_top:
-                rel_types = app.neo4j.get_existing_rel_types()
+                print_feed_explain_mode_line(feed_explain_respect_was_recommended)
+                existing = app.neo4j.get_existing_rel_types()
+                rel_types = feed_explain_rel_types(
+                    existing,
+                    respect_was_recommended=feed_explain_respect_was_recommended,
+                )
                 enriched: list[dict[str, object]] = []
                 for entry in feed_top:
                     pid_raw = entry["post_info"].get("post_id")
@@ -416,6 +426,8 @@ def execute_get_post_info(
     post_ref: str,
     verbose: bool,
     viewer: str | None = None,
+    *,
+    feed_explain_respect_was_recommended: bool = False,
 ) -> int:
     """Execute the 'get-post-info' command."""
 
@@ -424,11 +436,12 @@ def execute_get_post_info(
         def execute(app: HintGridApp) -> int:
             from hintgrid.cli.console import print_post_info_table
             from hintgrid.cli.feed_debug_print import (
+                print_feed_explain_mode_line,
                 print_feed_inclusion_explanation,
                 print_feed_settings_snapshot,
             )
             from hintgrid.config import feed_debug_settings_snapshot
-            from hintgrid.pipeline.feed_explain import explain_feed_inclusion
+            from hintgrid.pipeline.feed_explain import explain_feed_inclusion, feed_explain_rel_types
             from hintgrid.pipeline.post_info import get_extended_post_info
 
             resolved, resolve_err = app.postgres.resolve_status_id(post_ref)
@@ -448,11 +461,16 @@ def execute_get_post_info(
 
             if viewer is not None:
                 print_feed_settings_snapshot(feed_debug_settings_snapshot(app.settings))
+                print_feed_explain_mode_line(feed_explain_respect_was_recommended)
                 viewer_id = app.get_user_id(viewer)
                 if viewer_id is None:
                     print_error("Viewer user not found")
                     return EXIT_ERROR
-                rel_types = app.neo4j.get_existing_rel_types()
+                existing = app.neo4j.get_existing_rel_types()
+                rel_types = feed_explain_rel_types(
+                    existing,
+                    respect_was_recommended=feed_explain_respect_was_recommended,
+                )
                 ex = explain_feed_inclusion(
                     app.neo4j,
                     app.redis,

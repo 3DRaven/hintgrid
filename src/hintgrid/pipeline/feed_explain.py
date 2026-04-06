@@ -95,6 +95,22 @@ def _home_feed_redis_key(user_id: int) -> str:
     return f"feed:home:{user_id}"
 
 
+def feed_explain_rel_types(
+    existing: frozenset[str], *, respect_was_recommended: bool
+) -> frozenset[str]:
+    """Derive ``rel_types`` for :func:`explain_feed_inclusion` from graph relationship types.
+
+    When ``respect_was_recommended`` is False, ``WAS_RECOMMENDED`` is omitted so
+    :func:`hintgrid.pipeline.feed_queries.build_feed_filters` does not add
+    ``NOT EXISTS (u)-[:WAS_RECOMMENDED]->(p)`` — diagnostics can show personalized or
+    cold_start scoring for posts already marked recommended. When True, behavior
+    matches feed generation (strict duplicate filter when that type exists).
+    """
+    if respect_was_recommended:
+        return existing
+    return frozenset(t for t in existing if t != "WAS_RECOMMENDED")
+
+
 def _compute_weighted_components(
     *,
     path: FeedInclusionPath,
@@ -479,4 +495,5 @@ __all__ = [
     "RedisPlacement",
     "ScoreComponents",
     "explain_feed_inclusion",
+    "feed_explain_rel_types",
 ]

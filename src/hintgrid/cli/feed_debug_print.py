@@ -34,6 +34,24 @@ def print_feed_settings_snapshot(
     console.print()
 
 
+def print_feed_explain_mode_line(respect_was_recommended: bool) -> None:
+    """Print how feed inclusion diagnostics treat the WAS_RECOMMENDED graph filter."""
+    if respect_was_recommended:
+        msg = (
+            "[bold]Feed inclusion diagnostics:[/bold] strict filters — "
+            "exclude posts linked by [cyan]WAS_RECOMMENDED[/cyan] (same as feed generation)."
+        )
+    else:
+        msg = (
+            "[bold]Feed inclusion diagnostics:[/bold] [cyan]WAS_RECOMMENDED[/cyan] "
+            "exclusion is [yellow]not[/yellow] applied so scoring can be shown for posts "
+            "already in the recommended set. Use "
+            "[green]--feed-explain-respect-was-recommended[/green] for strict mode."
+        )
+    console.print(msg)
+    console.print()
+
+
 def print_feed_inclusion_explanation(explanation: FeedInclusionExplanation) -> None:
     """Print feed inclusion path, filters, score breakdown, and Redis placement."""
     path = explanation["path"]

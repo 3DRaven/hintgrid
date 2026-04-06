@@ -9,7 +9,7 @@ import pytest
 from hintgrid.clients.redis import RedisClient
 from hintgrid.config import HintGridSettings
 from hintgrid.pipeline.feed import generate_user_feed, write_feed_to_redis
-from hintgrid.pipeline.feed_explain import explain_feed_inclusion
+from hintgrid.pipeline.feed_explain import explain_feed_inclusion, feed_explain_rel_types
 
 if TYPE_CHECKING:
     from hintgrid.clients.neo4j import Neo4jClient
@@ -204,3 +204,64 @@ def test_explain_feed_inclusion_redis_rank_after_write(
     assert rr.get("zrevrank_0_is_top") == 0
     assert rr.get("redis_score") is not None
     assert float(rr["redis_score"]) > float(top_post)
+
+
+@pytest.mark.integration
+def test_explain_feed_inclusion_respect_was_recommended_filter(
+    neo4j: Neo4jClient,
+    redis_client: object,
+    settings: HintGridSettings,
+) -> None:
+    """With WAS_RECOMMENDED edge, strict rel_types yields not_scored; omitting type restores path."""
+    _setup_personalized_pair(neo4j)
+    neo4j.execute_labeled(
+        "MATCH (u:__user__ {id: $uid}), (p:__post__ {id: $pid}) "
+        "MERGE (u)-[r:WAS_RECOMMENDED]->(p) ON CREATE SET r.at = datetime()",
+        {"user": "User", "post": "Post"},
+        {"uid": 71001, "pid": 21001},
+    )
+    neo4j.invalidate_rel_types_cache()
+
+    redis_wrapper = RedisClient(redis_client)
+    test_settings = HintGridSettings(
+        feed_size=20,
+        feed_days=7,
+        personalized_interest_weight=1.0,
+        personalized_popularity_weight=0.2,
+        personalized_recency_weight=0.1,
+        pagerank_enabled=True,
+        pagerank_weight=0.1,
+        popularity_smoothing=1.0,
+        recency_smoothing=1.0,
+        recency_numerator=1.0,
+        language_match_weight=0.1,
+        ui_language_match_weight=0.2,
+        neo4j_worker_label=settings.neo4j_worker_label,
+        noise_community_id=-1,
+    )
+
+    existing = neo4j.get_existing_rel_types()
+    assert "WAS_RECOMMENDED" in existing
+
+    ex_strict = explain_feed_inclusion(
+        neo4j,
+        redis_wrapper,
+        71001,
+        21001,
+        test_settings,
+        rel_types=existing,
+    )
+    assert ex_strict is not None
+    assert ex_strict["path"] == "not_scored"
+
+    ex_loose = explain_feed_inclusion(
+        neo4j,
+        redis_wrapper,
+        71001,
+        21001,
+        test_settings,
+        rel_types=feed_explain_rel_types(existing, respect_was_recommended=False),
+    )
+    assert ex_loose is not None
+    assert ex_loose["path"] == "personalized"
+    assert ex_loose["score_components"] is not None

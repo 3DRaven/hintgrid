@@ -1013,6 +1013,17 @@ VerboseOpt = Annotated[
     ),
 ]
 
+FeedExplainRespectWasRecommendedOpt = Annotated[
+    bool,
+    typer.Option(
+        "--feed-explain-respect-was-recommended",
+        help="When explaining home-feed scoring, apply the same WAS_RECOMMENDED "
+        "exclusion filter as feed generation. Default: ignore that filter so "
+        "diagnostics show personalized/cold_start for posts already recommended.",
+        envvar="HINTGRID_FEED_EXPLAIN_RESPECT_WAS_RECOMMENDED",
+    ),
+]
+
 # Memory monitoring options
 MemoryIntervalOpt = Annotated[
     int,
@@ -2510,6 +2521,7 @@ def get_user_info_cmd(
     log_file: LogFileOpt = None,
     progress_poll_interval_seconds: ProgressPollIntervalSecondsOpt = None,
     verbose: VerboseOpt = False,
+    feed_explain_respect_was_recommended: FeedExplainRespectWasRecommendedOpt = False,
 ) -> None:
     """Get detailed information about a Mastodon user."""
     from hintgrid.cli.runner import execute_get_user_info
@@ -2640,7 +2652,12 @@ def get_user_info_cmd(
         progress_poll_interval_seconds=progress_poll_interval_seconds,
     )
 
-    exit_code = execute_get_user_info(overrides=overrides, handle=handle, verbose=verbose)
+    exit_code = execute_get_user_info(
+        overrides=overrides,
+        handle=handle,
+        verbose=verbose,
+        feed_explain_respect_was_recommended=feed_explain_respect_was_recommended,
+    )
     raise typer.Exit(code=exit_code)
 
 
@@ -2790,6 +2807,7 @@ def get_post_info_cmd(
     log_file: LogFileOpt = None,
     progress_poll_interval_seconds: ProgressPollIntervalSecondsOpt = None,
     verbose: VerboseOpt = False,
+    feed_explain_respect_was_recommended: FeedExplainRespectWasRecommendedOpt = False,
 ) -> None:
     """Get detailed information about a Mastodon post."""
     from hintgrid.cli.runner import execute_get_post_info
@@ -2925,6 +2943,7 @@ def get_post_info_cmd(
         post_ref=post_ref,
         verbose=verbose,
         viewer=viewer,
+        feed_explain_respect_was_recommended=feed_explain_respect_was_recommended,
     )
     raise typer.Exit(code=exit_code)
 
