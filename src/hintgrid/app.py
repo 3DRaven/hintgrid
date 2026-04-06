@@ -326,13 +326,7 @@ class HintGridApp:
 
     def clean_graph(self) -> None:
         """Delete all nodes and relationships from Neo4j."""
-        if self.neo4j.worker_label:
-            self.neo4j.execute_labeled(
-                "MATCH (n:__wlabel__) DETACH DELETE n",
-                label_map={"wlabel": self.neo4j.worker_label},
-            )
-        else:
-            self.neo4j.execute("MATCH (n) DETACH DELETE n")
+        self.neo4j.detach_delete_all_nodes(self.settings.apoc_batch_size)
 
     def clean_redis(self) -> None:
         """Remove HintGrid feed recommendations from Redis.

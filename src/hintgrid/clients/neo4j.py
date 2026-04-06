@@ -497,6 +497,55 @@ class Neo4jClient(AbstractContextManager["Neo4jClient"]):
             failed,
         )
 
+    def detach_delete_all_nodes(self, batch_size: int) -> None:
+        """Delete every node via ``apoc.periodic.iterate`` in small transactions.
+
+        A single ``MATCH (n) DETACH DELETE n`` can exceed
+        ``dbms.memory.transaction.total.max`` on large graphs; batching keeps
+        each transaction bounded.
+        """
+        if batch_size < 1:
+            raise ValueError(f"batch_size must be >= 1, got {batch_size}")
+
+        if self._worker_label:
+            iterate_query: LiteralString = "MATCH (n:__worker__) RETURN id(n) AS nid"
+            action_query: LiteralString = (
+                "UNWIND $_batch AS row MATCH (n:__worker__) WHERE id(n) = row.nid DETACH DELETE n"
+            )
+            result = self.execute_periodic_iterate(
+                iterate_query,
+                action_query,
+                ident_map={"worker": self._worker_label},
+                batch_size=batch_size,
+                parallel=False,
+                batch_mode="BATCH",
+            )
+        else:
+            iterate_query = "MATCH (n) RETURN id(n) AS nid"
+            action_query = "UNWIND $_batch AS row MATCH (n) WHERE id(n) = row.nid DETACH DELETE n"
+            result = self.execute_periodic_iterate(
+                iterate_query,
+                action_query,
+                batch_size=batch_size,
+                parallel=False,
+                batch_mode="BATCH",
+            )
+
+        failed = coerce_int(result.get("failedOperations", 0))
+        if failed > 0:
+            logger.warning(
+                "Full graph delete had failures: %s",
+                result.get("errorMessages", []),
+            )
+        logger.info(
+            "Graph node bulk delete: batches=%s total=%s committed=%s failed=%s",
+            coerce_int(result.get("batches", 0)),
+            coerce_int(result.get("total", 0)),
+            coerce_int(result.get("committedOperations", 0)),
+            failed,
+        )
+        self.invalidate_rel_types_cache()
+
     def get_existing_rel_types(self) -> frozenset[str]:
         """Return the set of relationship types currently present in the graph.
 

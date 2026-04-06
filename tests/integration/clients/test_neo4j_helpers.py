@@ -9,6 +9,7 @@ from __future__ import annotations
 import pytest
 
 from hintgrid.clients.neo4j import Neo4jClient
+from hintgrid.utils.coercion import coerce_int
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -109,3 +110,37 @@ class TestFormatTemplate:
             ident_map={"idx": "post_embedding_index"},
         )
         # If no error is raised, formatting succeeded
+
+
+@pytest.mark.integration
+class TestDetachDeleteAllNodes:
+    """Tests for batched full-partition graph delete (hintgrid clean --graph)."""
+
+    def test_batch_size_invalid_raises(self, neo4j: Neo4jClient) -> None:
+        """Zero or negative batch size must raise."""
+        with pytest.raises(ValueError, match="batch_size"):
+            neo4j.detach_delete_all_nodes(0)
+
+    def test_removes_worker_labeled_nodes(self, neo4j: Neo4jClient, worker_id: str) -> None:
+        """detach_delete_all_nodes clears nodes with the worker label only."""
+        assert neo4j.worker_label is not None
+        neo4j.execute_labeled(
+            "CREATE (n:__worker__ { _detachProbe: $w })",
+            ident_map={"worker": neo4j.worker_label},
+            params={"w": worker_id},
+        )
+        rows = neo4j.execute_and_fetch_labeled(
+            "MATCH (n:__worker__) WHERE n._detachProbe = $w RETURN count(n) AS c",
+            ident_map={"worker": neo4j.worker_label},
+            params={"w": worker_id},
+        )
+        assert coerce_int(rows[0]["c"]) == 1
+
+        neo4j.detach_delete_all_nodes(50)
+
+        rows_after = neo4j.execute_and_fetch_labeled(
+            "MATCH (n:__worker__) WHERE n._detachProbe = $w RETURN count(n) AS c",
+            ident_map={"worker": neo4j.worker_label},
+            params={"w": worker_id},
+        )
+        assert coerce_int(rows_after[0]["c"]) == 0
