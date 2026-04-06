@@ -16,12 +16,8 @@ from hintgrid.utils.coercion import coerce_int
 
 logger = logging.getLogger(__name__)
 
-_DELETE_USER_BELONGS: LiteralString = (
-    "MATCH (u:__user__)-[old:BELONGS_TO]->(uc:__uc__) DELETE old"
-)
-_DELETE_POST_BELONGS: LiteralString = (
-    "MATCH (p:__post__)-[old:BELONGS_TO]->(pc:__pc__) DELETE old"
-)
+_DELETE_USER_BELONGS: LiteralString = "MATCH (u:__user__)-[old:BELONGS_TO]->(uc:__uc__) DELETE old"
+_DELETE_POST_BELONGS: LiteralString = "MATCH (p:__post__)-[old:BELONGS_TO]->(pc:__pc__) DELETE old"
 
 _COUNT_USERS_WITH_CLUSTER: LiteralString = (
     "MATCH (u:__user__) WHERE u.cluster_id IS NOT NULL RETURN count(*) AS total"
@@ -52,8 +48,88 @@ _ACTION_POST: LiteralString = (
     "MERGE (p)-[:BELONGS_TO]->(pc)"
 )
 
+_GC_COUNT_ORPHAN_USER_COMM: LiteralString = (
+    "MATCH (uc:__uc__) WHERE NOT (()-[:BELONGS_TO]->(uc)) RETURN count(uc) AS cnt"
+)
+_GC_DELETE_ORPHAN_USER_COMM: LiteralString = (
+    "MATCH (uc:__uc__) WHERE NOT (()-[:BELONGS_TO]->(uc)) DETACH DELETE uc"
+)
+_GC_COUNT_ORPHAN_POST_COMM: LiteralString = (
+    "MATCH (pc:__pc__) WHERE NOT (()-[:BELONGS_TO]->(pc)) RETURN count(pc) AS cnt"
+)
+_GC_DELETE_ORPHAN_POST_COMM: LiteralString = (
+    "MATCH (pc:__pc__) WHERE NOT (()-[:BELONGS_TO]->(pc)) DETACH DELETE pc"
+)
+
 USER_LABEL_MAP: dict[str, str] = {"user": "User", "uc": "UserCommunity"}
 POST_LABEL_MAP: dict[str, str] = {"post": "Post", "pc": "PostCommunity"}
+
+
+def _gc_orphan_communities_after_rebuild(
+    neo4j: Neo4jClient,
+    *,
+    label_map: dict[str, str],
+    count_query: LiteralString,
+    delete_query: LiteralString,
+    log_label: str,
+) -> None:
+    """Detach-delete community nodes that have no incoming BELONGS_TO."""
+    count_result = neo4j.execute_and_fetch_labeled(count_query, label_map)
+    cnt = coerce_int(count_result[0].get("cnt", 0), 0) if count_result else 0
+    if cnt == 0:
+        logger.info("%s community GC: no orphan community nodes", log_label)
+        return
+    neo4j.execute_labeled(delete_query, label_map)
+    logger.info(
+        "%s community GC: removed %s orphan community node(s)",
+        log_label,
+        cnt,
+    )
+
+
+def _gc_after_community_structure(
+    neo4j: Neo4jClient,
+    community_base_label: Literal["UserCommunity", "PostCommunity"],
+) -> None:
+    """Run orphan GC for the community kind that was just rebuilt."""
+    if community_base_label == "UserCommunity":
+        _gc_orphan_communities_after_rebuild(
+            neo4j,
+            label_map=USER_LABEL_MAP,
+            count_query=_GC_COUNT_ORPHAN_USER_COMM,
+            delete_query=_GC_DELETE_ORPHAN_USER_COMM,
+            log_label="user",
+        )
+    else:
+        _gc_orphan_communities_after_rebuild(
+            neo4j,
+            label_map=POST_LABEL_MAP,
+            count_query=_GC_COUNT_ORPHAN_POST_COMM,
+            delete_query=_GC_DELETE_ORPHAN_POST_COMM,
+            log_label="post",
+        )
+
+
+def gc_orphan_user_communities(neo4j: Neo4jClient) -> None:
+    """Remove UserCommunity nodes with no incoming BELONGS_TO."""
+    _gc_orphan_communities_after_rebuild(
+        neo4j,
+        label_map=USER_LABEL_MAP,
+        count_query=_GC_COUNT_ORPHAN_USER_COMM,
+        delete_query=_GC_DELETE_ORPHAN_USER_COMM,
+        log_label="user",
+    )
+
+
+def gc_orphan_post_communities(neo4j: Neo4jClient) -> None:
+    """Remove PostCommunity nodes with no incoming BELONGS_TO."""
+    _gc_orphan_communities_after_rebuild(
+        neo4j,
+        label_map=POST_LABEL_MAP,
+        count_query=_GC_COUNT_ORPHAN_POST_COMM,
+        delete_query=_GC_DELETE_ORPHAN_POST_COMM,
+        log_label="post",
+    )
 
 
 def _run_periodic_community_structure(
@@ -80,12 +156,11 @@ def _run_periodic_community_structure(
         count_query,
         label_map,
     )
-    total = (
-        coerce_int(count_result[0].get("total", 0), 0) if count_result else 0
-    )
+    total = coerce_int(count_result[0].get("total", 0), 0) if count_result else 0
 
     if total == 0:
         logger.info("No nodes with cluster_id for %s community structure, skipping", log_label)
+        _gc_after_community_structure(neo4j, community_base_label)
         return
 
     labels_value = neo4j.labels_list(community_base_label)
@@ -139,9 +214,11 @@ def _run_periodic_community_structure(
             polling_thread.join(timeout=2.0)
             neo4j.cleanup_progress_tracker(operation_id)
             progress.update(task_id, description=done_task_description)
+        _gc_after_community_structure(neo4j, community_base_label)
     else:
         with console.status(console_status):
             _run_iterate()
+        _gc_after_community_structure(neo4j, community_base_label)
 
 
 def create_user_community_structure(

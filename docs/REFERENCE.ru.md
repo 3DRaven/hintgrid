@@ -304,6 +304,20 @@ OPTIONS {
 4. Количество сообществ определяется автоматически
 5. Пользователи в одном племени имеют похожие паттерны взаимодействий
 6. Создаются UserCommunity узлы и связи BELONGS_TO батчами через `apoc.periodic.iterate` (размер батча — `HINTGRID_APOC_BATCH_SIZE`, как для SIMILAR_TO и пересборки интересов; при интерактивном запуске аналитики выводится прогресс)
+7. **GC сиротских сообществ**: после пересборки `BELONGS_TO` (и в случае, когда ни у одного пользователя/поста нет `cluster_id` — после массового снятия старых рёбер) удаляются узлы `UserCommunity`/`PostCommunity`, на которые больше не указывает ни одно входящее `BELONGS_TO`. Так исчезают «старые» узлы сообществ после смены `cluster_id` и схлопывания синглтонов в общий `noise_community_id`, чтобы метрики и граф не копили мусор.
+
+**Пример логики GC (идея запроса; в пайплайне выполняется для пользовательских и постовых сообществ отдельно):**
+```cypher
+MATCH (uc:UserCommunity)
+WHERE NOT (()-[:BELONGS_TO]->(uc))
+DETACH DELETE uc;
+```
+
+```cypher
+MATCH (pc:PostCommunity)
+WHERE NOT (()-[:BELONGS_TO]->(pc))
+DETACH DELETE pc;
+```
 
 **Параметры кластеризации:**
 - `leiden_resolution` (gamma) — управляет размером кластеров.
@@ -387,7 +401,8 @@ RETURN nodePropertiesWritten, communityCount, modularity;
 3. **SIMILAR_TO graph**: создаём связи сходства между постами при `score > similarity_threshold`
 4. **Leiden Clustering**: анализируем граф SIMILAR_TO и выделяем тематические кластеры
 5. **Community Assignment**: посты получают `cluster_id`, создаются PostCommunity узлы и `BELONGS_TO` (батчами через APOC, см. `HINTGRID_APOC_BATCH_SIZE`)
-6. **Pruning (опционально)**: удаляем SIMILAR_TO после кластеризации, если включён `prune_after_clustering`
+6. **GC сиротских PostCommunity**: после пересборки `BELONGS_TO` удаляются узлы `PostCommunity` без входящего `BELONGS_TO` (та же логика, что в пользовательской ветке; пример Cypher — в разделе User Clustering выше)
+7. **Pruning (опционально)**: удаляем SIMILAR_TO после кластеризации, если включён `prune_after_clustering`
 
 **Пример построения графа сходства и кластеризации:**
 ```cypher
