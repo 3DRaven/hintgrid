@@ -379,7 +379,7 @@ def test_generate_user_feed_negative_scores_handled(
         personalized_popularity_weight=0.0,
         personalized_recency_weight=1.0,  # High recency weight
         popularity_smoothing=1,
-        recency_smoothing=1,  # Small smoothing might cause issues (using int)
+        recency_smoothing=1.0,  # Small smoothing might cause issues
         recency_numerator=1.0,
         language_match_weight=0.0,
         neo4j_worker_label=settings.neo4j_worker_label,

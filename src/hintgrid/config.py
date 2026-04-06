@@ -75,8 +75,8 @@ DEFAULT_PERSONALIZED_POPULARITY_WEIGHT = 0.3
 DEFAULT_PERSONALIZED_RECENCY_WEIGHT = 0.2
 DEFAULT_COLD_START_POPULARITY_WEIGHT = 0.7
 DEFAULT_COLD_START_RECENCY_WEIGHT = 0.3
-DEFAULT_POPULARITY_SMOOTHING = 1
-DEFAULT_RECENCY_SMOOTHING = 1
+DEFAULT_POPULARITY_SMOOTHING = 1.0
+DEFAULT_RECENCY_SMOOTHING = 1.0
 DEFAULT_RECENCY_NUMERATOR = 1.0
 DEFAULT_COLD_START_FALLBACK = "global_top"
 DEFAULT_COLD_START_LIMIT = 500
@@ -306,8 +306,8 @@ class HintGridSettings(BaseSettings):
     personalized_recency_weight: float = Field(default=DEFAULT_PERSONALIZED_RECENCY_WEIGHT)
     cold_start_popularity_weight: float = Field(default=DEFAULT_COLD_START_POPULARITY_WEIGHT)
     cold_start_recency_weight: float = Field(default=DEFAULT_COLD_START_RECENCY_WEIGHT)
-    popularity_smoothing: int = Field(default=DEFAULT_POPULARITY_SMOOTHING)
-    recency_smoothing: int = Field(default=DEFAULT_RECENCY_SMOOTHING)
+    popularity_smoothing: float = Field(default=DEFAULT_POPULARITY_SMOOTHING, gt=0.0)
+    recency_smoothing: float = Field(default=DEFAULT_RECENCY_SMOOTHING, gt=0.0)
     recency_numerator: float = Field(default=DEFAULT_RECENCY_NUMERATOR)
     cold_start_fallback: str = Field(default=DEFAULT_COLD_START_FALLBACK)
     cold_start_limit: int = Field(default=DEFAULT_COLD_START_LIMIT)

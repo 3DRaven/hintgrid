@@ -830,17 +830,18 @@ ColdStartRecencyWeightOpt = Annotated[
     ),
 ]
 PopularitySmoothingOpt = Annotated[
-    int | None,
+    float | None,
     typer.Option(
         help="Smoothing factor for popularity score calculation. "
-        "Prevents zero-division with low interaction counts. [default: 1]",
+        "Prevents zero-division with low interaction counts. [default: 1.0]",
         envvar="HINTGRID_POPULARITY_SMOOTHING",
     ),
 ]
 RecencySmoothingOpt = Annotated[
-    int | None,
+    float | None,
     typer.Option(
-        help="Smoothing factor for recency score calculation. [default: 1]",
+        help="Smoothing term in days (added to age in days) for recency score. "
+        "Must be > 0. [default: 1.0]",
         envvar="HINTGRID_RECENCY_SMOOTHING",
     ),
 ]
