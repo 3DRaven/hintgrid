@@ -131,15 +131,14 @@ The project uses strict type checking configuration to minimize the need for typ
 
 **pyright configuration:**
 - `typeCheckingMode = "strict"` - enables strictest type checking mode
-- `reportUnusedTypeIgnoreComment = "error"` - converts unused `# type: ignore` comments to errors
+- `reportUnnecessaryTypeIgnoreComment = "error"` - flags `# type: ignore` / `# pyright: ignore` that have no effect (Pyright CLI; do not use the obsolete name `reportUnusedTypeIgnoreComment`)
 - `reportGeneralTypeIssues = "error"` - strict type checking mode
 - `reportUnnecessaryCast = "error"` - flags unnecessary `cast()` calls as errors
 - `reportIncompatibleMethodOverride = "error"` - flags incompatible method overrides
 - `reportIncompatibleVariableOverride = "error"` - flags incompatible variable overrides
 - `reportPrivateUsage = "error"` - flags private member usage
 - `reportConstantRedefinition = "error"` - flags constant redefinition
-- `strictParameterInitialization = true` - strict parameter initialization checking
-- `strictPropertyInitialization = true` - strict property initialization checking
+- Note: `strictParameterInitialization` / `strictPropertyInitialization` are **not** valid keys in `pyrightconfig.json` for the open-source Pyright CLI (unknown keys cause warnings). Similar checks may appear under Pylance/VS Code `python.analysis.*` settings; rely on `typeCheckingMode = "strict"` and per-rule `report*` options in Pyright.
 - `strictListInference = true` - strict list type inference
 - `strictDictionaryInference = true` - strict dictionary type inference
 - `strictSetInference = true` - strict set type inference
